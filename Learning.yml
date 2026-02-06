@@ -1,0 +1,119 @@
+#===============================================
+# Uninstalling NSYS Diagnostics
+#===============================================
+
+$keys = Get-Item $uninstallKeys |
+Get-ItemProperty |
+Where-Object { $_.DisplayName -like "*NSYS*" }
+
+foreach ($key in $keys) {
+    Write-Host "Removing registry entry for $($key.DisplayName)" -ForegroundColor Red
+    Remove-Item $key.PSPath -Recurse -Force
+}
+
+# --- Folders to clean ---
+$pathsToRemove = @(
+    "C:\Program Files\NSYS Diagnostics",
+    "C:\Program Files (x86)\NSYS Diagnostics",
+    "C:\Program Files\NSYS Diagnostics",
+    "C:\Program Files (x86)\NSYS Diagnostics",
+    "C:\ProgramData\NSYS Diagnostics"
+	)
+
+# User AppData (all users)
+Get-ChildItem "C:\Users" -Directory | ForEach-Object {
+    $pathsToRemove += @(
+        "$($_.FullName)\AppData\Local\NSYS Diagnostics",
+        "$($_.FullName)\AppData\Local\NSYS Diagnostics",
+        "$($_.FullName)\AppData\Roaming\NSYS Diagnostics",
+        "$($_.FullName)\AppData\Roaming\NSYS Diagnostics"
+    )
+}
+
+# --- Remove folders ---
+foreach ($path in $pathsToRemove) {
+    if (Test-Path $path) {
+        Write-Host "Removing $path" -ForegroundColor Red
+        Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# --- Temp cleanup ---
+Write-Host "Cleaning Temp folders..." -ForegroundColor Cyan
+Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+#===================================================================
+# Uninstalling iTunes if installed through exe
+#====================================================================
+Write-Host "Searching for iTunes installation..." -ForegroundColor Cyan
+
+$UninstallKeys = @(
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+)
+
+$iTunes = Get-ItemProperty $UninstallKeys -ErrorAction SilentlyContinue |
+          Where-Object { $_.DisplayName -like "iTunes*" }
+
+if ($iTunes) {
+    foreach ($app in $iTunes) {
+        Write-Host "Found iTunes: $($app.DisplayName)" -ForegroundColor Yellow
+
+        if ($app.UninstallString) {
+            $UninstallCmd = $app.UninstallString -replace "msiexec.exe", "" -replace "/I", "/X"
+            Start-Process "msiexec.exe" -ArgumentList "$UninstallCmd /qn /norestart" -Wait
+            Write-Host "iTunes uninstalled successfully." -ForegroundColor Green
+        }
+    }
+}
+else {
+    Write-Host "iTunes not found (MSI install)." -ForegroundColor Red
+}
+#===================================================================
+# Uninstalling iTunes if installed through the MS Store
+#===================================================================
+
+Write-Host "Checking for Microsoft Store iTunes..." -ForegroundColor Cyan
+
+$StoreiTunes = Get-AppxPackage -Name "AppleInc.iTunes" -AllUsers
+
+if ($StoreiTunes) {
+    Write-Host "Removing Microsoft Store iTunes..." -ForegroundColor Yellow
+    Remove-AppxPackage -Package $StoreiTunes.PackageFullName -AllUsers
+    Write-Host "Store version of iTunes removed." -ForegroundColor Green
+}
+else {
+    Write-Host "Microsoft Store iTunes not found." -ForegroundColor Red
+}
+
+#========================================================================
+# Folder Clean-Up
+#========================================================================
+Write-Host "Cleaning Apple/iTunes folders from all user profiles..." -ForegroundColor Cyan
+
+$UserProfiles = Get-ChildItem "C:\Users" -Directory |
+Where-Object {
+    $_.Name -notin @("Public", "Default", "Default User", "All Users")
+}
+
+foreach ($profile in $UserProfiles) {
+
+    $LocalAppData = Join-Path $profile.FullName "AppData\Local"
+
+    if (Test-Path $LocalAppData) {
+
+        Write-Host "Checking profile: $($profile.Name)" -ForegroundColor DarkCyan
+
+        Get-ChildItem -Path $LocalAppData -Directory -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -match "^Apple($| )|^Apple Computer$|^Apple Inc$|iTunes"
+        } | ForEach-Object {
+
+            Write-Host "Removing: $($_.FullName)" -ForegroundColor Yellow
+            Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Write-Host "Apple/iTunes AppData cleanup completed successfully." -ForegroundColor Green
