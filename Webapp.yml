@@ -1,0 +1,109 @@
+- name: Deploy CCTECH FOG USB Reload Web Tool
+  hosts: all
+  become: yes
+
+  vars:
+    app_dir: "/var/www/html/cctech-usb"
+
+  tasks:
+
+    - name: Get server IP
+      set_fact:
+        my_ip: "{{ ansible_default_ipv4.address }}"
+
+    - name: Install required packages
+      apt:
+        name:
+          - apache2
+          - grub-efi-amd64
+          - grub-efi-ia32
+          - parted
+          - kpartx
+        state: present
+        update_cache: yes
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    - name: Deploy index.html
+      copy:
+        dest: "{{ app_dir }}/index.html"
+        owner: www-data
+        group: www-data
+        mode: "0644"
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+          <title>CCTECH FOG USB Reload</title>
+          <link rel="stylesheet" href="style.css">
+          </head>
+          <body>
+          <h1>CCTECH FOG USB Reload</h1>
+          <button onclick="run()">Reload USB</button>
+          <pre id="log"></pre>
+
+          <script>
+          async function run(){
+              document.getElementById("log").innerText="Running...";
+              const r = await fetch("api.php?action=run_script");
+              const j = await r.json();
+              document.getElementById("log").innerText=JSON.stringify(j,null,2);
+          }
+          </script>
+          </body>
+          </html>
+
+    - name: Deploy API
+      copy:
+        dest: "{{ app_dir }}/api.php"
+        owner: www-data
+        group: www-data
+        mode: "0644"
+        content: |
+          <?php
+          header('Content-Type: application/json');
+
+          $script="/var/www/html/cctech-usb/run_usb_script.sh";
+
+          if($_GET['action']=="run_script"){
+              $pid=shell_exec("sudo $script > /tmp/fog-usb.log 2>&1 & echo $!");
+              echo json_encode(["status"=>"started","pid"=>$pid]);
+          }
+
+    - name: Deploy USB script
+      template:
+        dest: "{{ app_dir }}/run_usb_script.sh"
+        owner: www-data
+        group: www-data
+        mode: "0755"
+        src: run_usb_script.sh.j2
+
+    - name: Allow Apache access
+      blockinfile:
+        path: /etc/apache2/apache2.conf
+        marker: "# {mark} CCTECH USB TOOL"
+        block: |
+          <Directory {{ app_dir }}>
+              Options Indexes FollowSymLinks
+              AllowOverride All
+              Require all granted
+          </Directory>
+
+    - name: Allow www-data to run script
+      copy:
+        dest: /etc/sudoers.d/cctech-usb
+        content: |
+          www-data ALL=(ALL) NOPASSWD: {{ app_dir }}/run_usb_script.sh
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted

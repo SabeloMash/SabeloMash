@@ -1,0 +1,246 @@
+<!--*************************************************
+Windows 10 Answer File Generator - LEGACY BIOS (MBR)
+For 32-bit and 64-bit systems with Legacy BIOS boot mode
+**************************************************-->
+
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+<settings pass="windowsPE">
+<component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<SetupUILanguage>
+<UILanguage>en-US</UILanguage>
+</SetupUILanguage>
+<InputLocale>1c09:00000409</InputLocale>
+<SystemLocale>en-US</SystemLocale>
+<UILanguage>en-US</UILanguage>
+<UILanguageFallback>en-US</UILanguageFallback>
+<UserLocale>en-ZA</UserLocale>
+</component>
+<component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<DiskConfiguration>
+<Disk wcm:action="add">
+<DiskID>0</DiskID>
+<WillWipeDisk>true</WillWipeDisk>
+<CreatePartitions>
+<!-- Primary Windows partition (Legacy MBR) -->
+<CreatePartition wcm:action="add">
+<Order>1</Order>
+<Type>Primary</Type>
+<Extend>true</Extend>
+</CreatePartition>
+</CreatePartitions>
+<ModifyPartitions>
+<!-- Windows partition -->
+<ModifyPartition wcm:action="add">
+<Order>1</Order>
+<PartitionID>1</PartitionID>
+<Label>Windows</Label>
+<Letter>C</Letter>
+<Format>NTFS</Format>
+</ModifyPartition>
+</ModifyPartitions>
+</Disk>
+</DiskConfiguration>
+<ImageInstall>
+<OSImage>
+<InstallTo>
+<DiskID>0</DiskID>
+<PartitionID>1</PartitionID>
+</InstallTo>
+<InstallToAvailablePartition>false</InstallToAvailablePartition>
+</OSImage>
+</ImageInstall>
+<UserData>
+<ProductKey>
+<!-- Do not uncomment the Key element if you are using trial ISOs -->
+<!-- You must uncomment the Key element (and optionally insert your own key) if you are using retail or volume license ISOs -->
+<Key></Key>
+<WillShowUI>Never</WillShowUI>
+</ProductKey>
+<AcceptEula>true</AcceptEula>
+<FullName>User</FullName>
+<Organization></Organization>
+</UserData>
+			<UseConfigurationSet>true</UseConfigurationSet>
+			<RunSynchronous>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>1</Order>
+					<Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>2</Order>
+					<Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>3</Order>
+					<Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>4</Order>
+					<Path>cmd.exe /c &gt;&gt;X:\diskpart.txt (echo:SELECT DISK=0&amp;echo:CLEAN&amp;echo:CREATE PARTITION PRIMARY&amp;echo:SELECT PARTITION=1&amp;echo:ACTIVE)</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>5</Order>
+					<Path>cmd.exe /c &gt;&gt;X:\diskpart.txt (echo:FORMAT QUICK FS=NTFS LABEL=^"Windows^"&amp;echo:ASSIGN LETTER=C)</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>6</Order>
+					<Path>cmd.exe /c "diskpart.exe /s "X:\diskpart.txt" &gt;&gt;"X:\diskpart.log" || ( type "X:\diskpart.log" &amp; echo diskpart encountered an error. &amp; pause &amp; exit /b 1 )"</Path>
+				</RunSynchronousCommand>
+			</RunSynchronous>
+</component>
+</settings>
+<settings pass="specialize">
+<component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<InputLocale>1c09:00000409</InputLocale>
+<SystemLocale>en-ZA</SystemLocale>
+<UILanguage>en-ZA</UILanguage>
+<UILanguageFallback>en-ZA</UILanguageFallback>
+<UserLocale>en-ZA</UserLocale>
+</component>
+<component name="Microsoft-Windows-Security-SPP-UX" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<SkipAutoActivation>true</SkipAutoActivation>
+</component>
+<component name="Microsoft-Windows-SQMApi" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<CEIPEnabled>0</CEIPEnabled>
+</component>
+<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ComputerName>User-PC</ComputerName>
+<ProductKey>W269N-WFGWX-YVC9B-4J6C9-T83GX</ProductKey>
+</component>
+<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="x86" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<ComputerName>User-PC</ComputerName>
+	<ProductKey>W269N-WFGWX-YVC9B-4J6C9-T83GX</ProductKey>
+</component>
+</settings>
+<settings pass="oobeSystem">
+<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<AutoLogon>
+<Password>
+<Value></Value>
+<PlainText>true</PlainText>
+</Password>
+<Enabled>true</Enabled>
+<Username>User</Username>
+</AutoLogon>
+<OOBE>
+<HideEULAPage>true</HideEULAPage>
+<HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+<HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+<HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+<NetworkLocation>Home</NetworkLocation>
+<SkipUserOOBE>true</SkipUserOOBE>
+<SkipMachineOOBE>true</SkipMachineOOBE>
+<ProtectYourPC>1</ProtectYourPC>
+</OOBE>
+<UserAccounts>
+<LocalAccounts>
+<LocalAccount wcm:action="add">
+<Password>
+<Value></Value>
+<PlainText>true</PlainText>
+</Password>
+<Description></Description>
+<DisplayName>User</DisplayName>
+<Group>Administrators</Group>
+<Name>User</Name>
+</LocalAccount>
+</LocalAccounts>
+</UserAccounts>
+<RegisteredOrganization></RegisteredOrganization>
+<RegisteredOwner>User</RegisteredOwner>
+<DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
+<FirstLogonCommands>
+<SynchronousCommand wcm:action="add">
+<Description>CCTECH SCRIPT</Description>
+<Order>4</Order>
+<CommandLine>C:\CCTECH\CCTECH64.bat</CommandLine>
+<RequiresUserInput>true</RequiresUserInput>
+</SynchronousCommand>
+<SynchronousCommand wcm:action="add">
+<Description>Control Panel View</Description>
+<Order>1</Order>
+<CommandLine>reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\ControlPanel" /v StartupPage /t REG_DWORD /d 1 /f</CommandLine>
+<RequiresUserInput>true</RequiresUserInput>
+</SynchronousCommand>
+<SynchronousCommand wcm:action="add">
+<Order>2</Order>
+<Description>Control Panel Icon Size</Description>
+<RequiresUserInput>false</RequiresUserInput>
+<CommandLine>reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\ControlPanel" /v AllItemsIconView /t REG_DWORD /d 0 /f</CommandLine>
+</SynchronousCommand>
+<SynchronousCommand wcm:action="add">
+<Order>3</Order>
+<RequiresUserInput>false</RequiresUserInput>
+<CommandLine>cmd /C wmic useraccount where name="User" set PasswordExpires=false</CommandLine>
+<Description>Password Never Expires</Description>
+</SynchronousCommand>
+</FirstLogonCommands>
+<TimeZone>South Africa Standard Time</TimeZone>
+</component>
+<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="x86" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<AutoLogon>
+		<Password>
+			<Value></Value>
+			<PlainText>true</PlainText>
+		</Password>
+		<Enabled>true</Enabled>
+		<Username>User</Username>
+	</AutoLogon>
+	<OOBE>
+		<HideEULAPage>true</HideEULAPage>
+		<HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+		<HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+		<HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+		<NetworkLocation>Home</NetworkLocation>
+		<SkipUserOOBE>true</SkipUserOOBE>
+		<SkipMachineOOBE>true</SkipMachineOOBE>
+		<ProtectYourPC>1</ProtectYourPC>
+	</OOBE>
+	<UserAccounts>
+		<LocalAccounts>
+			<LocalAccount wcm:action="add">
+				<Password>
+					<Value></Value>
+					<PlainText>true</PlainText>
+				</Password>
+				<Description></Description>
+				<DisplayName>User</DisplayName>
+				<Group>Administrators</Group>
+				<Name>User</Name>
+			</LocalAccount>
+		</LocalAccounts>
+	</UserAccounts>
+	<RegisteredOrganization></RegisteredOrganization>
+	<RegisteredOwner>User</RegisteredOwner>
+	<DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
+	<FirstLogonCommands>
+		<SynchronousCommand wcm:action="add">
+			<Description>CCTECH SCRIPT</Description>
+			<Order>4</Order>
+			<CommandLine>C:\CCTECH\CCTECH64.bat</CommandLine>
+			<RequiresUserInput>true</RequiresUserInput>
+		</SynchronousCommand>
+		<SynchronousCommand wcm:action="add">
+			<Description>Control Panel View</Description>
+			<Order>1</Order>
+			<CommandLine>reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\ControlPanel" /v StartupPage /t REG_DWORD /d 1 /f</CommandLine>
+			<RequiresUserInput>true</RequiresUserInput>
+		</SynchronousCommand>
+		<SynchronousCommand wcm:action="add">
+			<Order>2</Order>
+			<Description>Control Panel Icon Size</Description>
+			<RequiresUserInput>false</RequiresUserInput>
+			<CommandLine>reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\ControlPanel" /v AllItemsIconView /t REG_DWORD /d 0 /f</CommandLine>
+		</SynchronousCommand>
+		<SynchronousCommand wcm:action="add">
+			<Order>3</Order>
+			<RequiresUserInput>false</RequiresUserInput>
+			<CommandLine>cmd /C wmic useraccount where name="User" set PasswordExpires=false</CommandLine>
+			<Description>Password Never Expires</Description>
+		</SynchronousCommand>
+	</FirstLogonCommands>
+	<TimeZone>South Africa Standard Time</TimeZone>
+</component>
+</settings>
+</unattend>

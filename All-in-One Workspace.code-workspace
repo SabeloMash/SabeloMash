@@ -8,7 +8,13 @@
 		},
 		{
 			"path": "../it_toolbox"
+		},
+		{
+			"name": "Deployment",
+			"path": "../Deployment"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"powershell.cwd": "ansible"
+	}
 }
