@@ -1,0 +1,189 @@
+---
+- name: Playbook to specify host IP directly
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Display ipaddress
+      ansible.builtin.debug:
+        msg: "{{ ipaddress }}"
+    - name: Set password1
+      ansible.builtin.set_fact:
+        password1: "{{ password1 }}"
+    - name: Set password2
+      ansible.builtin.set_fact:
+        password2: "{{ password2 }}"
+    - name: Attempt to connect with cctech-C
+      ansible.builtin.shell: |
+        sshpass -p '{{ password1 }}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cctech@{{ ipaddress }} 'exit'
+      register: user1_connection
+      ignore_errors: true
+    - name: Set user1_success based on connection attempt
+      ansible.builtin.set_fact:
+        user1_success: "{{ user1_connection.rc == 0 }}"
+    - name: Attempt to connect with cctech-P
+      ansible.builtin.shell: |
+        sshpass -p '{{ password2 }}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cctech@{{ ipaddress }} 'exit'
+      when: not user1_success
+      register: user2_connection
+      ignore_errors: true
+    - name: Set user2_success based on connection attempt
+      ansible.builtin.set_fact:
+        user2_success: "{{ user2_connection.rc == 0 }}"
+      when: not user1_success
+    - name: Determine final connection details
+      ansible.builtin.set_fact:
+        ansible_user: "cctech"
+        ansible_password: "{{ password1 if user1_success else password2 }}"
+        ansible_become_password: "{{ password1 if user1_success else password2 }}"
+        connection_success: "{{ user1_success or user2_success }}"
+    - name: Save variables to use in the next play
+      ansible.builtin.add_host:
+        name: myhost
+        ansible_host: "{{ ipaddress }}"
+        ansible_user: "{{ ansible_user }}"
+        ansible_password: "{{ ansible_password }}"
+        ansible_become_password: "{{ ansible_become_password }}"
+        ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+        ansible_python_interpreter: /usr/bin/python3
+
+- name: Configure Bare-Metal Deployed blank machine - Attempt with user1
+  hosts: myhost
+  gather_facts: true
+  become: true
+  become_user: root
+  tasks:  
+    - name: Set Fog version variable
+      ansible.builtin.set_fact:
+        fogversion: "{{ fogversion }}"
+    - name: Display fogversion
+      ansible.builtin.debug:
+        msg: "{{ fogversion }}"
+    # Run task to set host variables
+    - name: Run task to set host variables
+      ansible.builtin.include_tasks: general/setvars_targeted.yml
+    # Run task to set new hostname variable
+    - name: Run task to set new hostname variable
+      ansible.builtin.include_tasks: general/sethostname.yml
+    # # Run task to extend LVM
+    - name: Run task to extend LVM
+      ansible.builtin.include_tasks: general/extendlvm.yml
+    # # Run task to update Ubuntu OS
+    - name: Run task to update Ubuntu OS
+      ansible.builtin.include_tasks: general/osupdate.yml
+    # Run task to install SyncThing
+    - name: Run task to install SyncThing
+      ansible.builtin.include_tasks: synctthing/syncthinginstall.yml
+    # Run task to extract hosts IP for API connections
+    - name: Run task to extract hosts IP for API connections
+      ansible.builtin.include_tasks: general/getipforapi.yml
+    # Run task to extract SyncThing API key
+    - name: Run task to extract SyncThing API key
+      ansible.builtin.include_tasks: synctthing/getapikey.yml
+    # Run task to set SyncThing User and Password
+    - name: Run task to set SyncThing User and Password
+      ansible.builtin.include_tasks: synctthing/setuserandpassword.yml
+    # Run task to set SyncThing Hostname
+    - name: Run task to set SyncThing Hostname
+      ansible.builtin.include_tasks: synctthing/sethostname.yml
+    # Run task to set SyncThing Basic configuration
+    - name: Run task to set SyncThing Basic configuration
+      ansible.builtin.include_tasks: synctthing/basicconfig.yml
+    # Run task to get the device ID from Syncthing
+    - name: Run task to get the device ID from Syncthing
+      ansible.builtin.include_tasks: synctthing/getdeviceid.yml
+    # Run task to add default remote devices
+    - name: Run task to add default remote devices
+      ansible.builtin.include_tasks: synctthing/addremotedevices.yml
+    # Run task to link TNF-SRV-BU2 Syncthing
+    # - name: Run task to link TNF-SRV-BU2 Syncthing
+    #   ansible.builtin.include_tasks: synctthing/linktoBU2.yml
+    # Run task to link TNF-ITTECH-PC2 Syncthing
+    - name: Run task to link TNF-ITTECH-PC2 Syncthing
+      ansible.builtin.include_tasks: synctthing/linktoTNFITTECHPC2.yml
+    # Run task to add FOG Updates folder to sync
+    - name: Run task to add FOG Updates folder to sync
+      ansible.builtin.include_tasks: synctthing/addsyncfolders.yml
+    # Run task to install FOG Server
+    - name: Run task to install FOG Server
+      ansible.builtin.include_tasks: fog/fog_install.yml
+    # # Run task to update FOG Server kernel
+    # - name: Run task to update FOG Server kernel
+    #   ansible.builtin.include_tasks: fog/fog_kernelupdate.yml
+    # Run task to copy Init.xz and bzImage files from server
+    - name: Run task to update FOG Server kernel
+      ansible.builtin.include_tasks: fog/fog_copy_inits.yml
+    # # Run task to configure FOG Server -- Depracated
+    # - name: Run task to configure FOG Server
+    #   ansible.builtin.include_tasks: fog/fog_configure_v1_0.yml
+    #   when: fogversion == "v1_0"
+    # # Run task to configure FOG Server -- Depracated
+    # - name: Run task to configure FOG Server
+    #   ansible.builtin.include_tasks: fog/fog_configure_v4_0.yml
+    #   when: fogversion == "v4_0"
+    # Run task to configure FOG Server
+    # - name: Run task to configure FOG Server
+    #   ansible.builtin.include_tasks: fog/fog_configure_v4_1.yml
+    #   when: fogversion == "v4_1"
+    # # Run task to configure FOG Server
+    # - name: Run task to configure FOG Server
+    #   ansible.builtin.include_tasks: fog/fog_configure_v4_2.yml
+    #   when: fogversion == "v4_2"
+    # - name: Run task to configure FOG Server
+    #   ansible.builtin.include_tasks: fog/fog_configure_v4_3.yml
+    #  when: fogversion == "v5_1"
+   # - name: Run task to configure FOG Server
+    #  ansible.builtin.include_tasks: fog/fog_configure_v5_1.yml
+
+      when: fogversion == "v6"
+    - name: Run task to configure FOG Server
+      ansible.builtin.include_tasks: fog/fog_configure_v6.yml
+
+     # Run task to configure FOG Server Mailer
+    # - name: Run task to configure FOG Server Mailer
+    #   ansible.builtin.include_tasks: fog/fog_mailer.yml
+
+    # Run task to configure FOG MariaDB v4.2
+    #   when: fogversion == "v4_2"
+    # - name: Run task to configure FOG MariaDB
+    #   ansible.builtin.include_tasks: fog/fog_configure_mariadb.yml
+    #  # Run task to configure FOG MariaDB v5
+    #  when: fogversion == "v5_1"
+    #- name: Run task to configure FOG MariaDB
+    #  ansible.builtin.include_tasks: fog/fog_configure_mariadb_5_1.yml
+      when: fogversion == "v6"
+    - name: Run task to configure FOG MariaDB
+      ansible.builtin.include_tasks: fog/fog_configure_mariadb_6.yml
+    # Run task to create mk.fos-usb
+    # - name: Run task to create mk.fos-usb
+    #   ansible.builtin.include_tasks: fog/fog_usbcreatescript.yml
+    #   when: fogversion == "v4_1"
+    #- name: Run task to create mk.fos-usb
+     # ansible.builtin.include_tasks: fog/fog_usbcreatescript_v4_2.yml
+    - name: Run task to create mk.fos-usb
+      ansible.builtin.include_tasks: fog/fog_usbcreatescript_v6.yml
+      # when: fogversion == "v4_2"
+    # Run task to create fog_version file
+    - name: Run task to create fog_version file
+      include_tasks: fog/fog_version.yml
+      # when: fogversion == "v4_2"
+    # Run task to create Jira file
+    - name: Run task to create Jira file
+      include_tasks: fog/fog_jira_ticket.yml
+      # when: fogversion == "v4_2"    
+    # Run task to create Delete file php
+    - name: Send a JSON payload to CCTECH Tech Team Chat to notiify that FOG Auto install has completed successfully
+      ansible.builtin.uri:
+        url: "{{ msteams_webhook }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body: '{"text":"FOG Auto install, for version {{ fogversion }} has completed successfully for {{ serverhostname }}"}'
+        body_format: json
+        return_content: true
+        status_code: 202
+      register: result
+
+
+    # Run task to update CCTECH user password. NB!!! Ensure this is the last step
+    - name: Run task to update CCTECH user password. NB!!! Ensure this is the last step
+      ansible.builtin.include_tasks: general/updatepassword.yml
