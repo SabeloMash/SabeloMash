@@ -1526,6 +1526,26 @@ getHardDisk() {
         devs="$devs $dev"
     done
     devs=$(echo "$devs" | xargs)
+
+    # Fallback: if no non-removable device was discovered, re-scan and only skip USB devices.
+    # Some systems expose storage as removable or sysfs metadata is unreliable in the initramfs.
+    if [[ -z $devs ]]; then
+        [[ -n $isdebug ]] && echo "No non-removable internal drives found; performing fallback scan without removable filter..."
+        for dev in $raw_devs; do
+            local dev_name dev_sysfs
+            dev_name=$(basename "$dev")
+            dev_sysfs=$(readlink -f "/sys/block/$dev_name" 2>/dev/null)
+
+            if [[ $dev_sysfs == *"/usb"* || $dev_sysfs == *"/usb/"* || $dev_sysfs == *"usb"* ]]; then
+                [[ -n $isdebug ]] && echo "Skipping USB device candidate on fallback: $dev"
+                continue
+            fi
+
+            devs="$devs $dev"
+        done
+        devs=$(echo "$devs" | xargs)
+    fi
+
     [[ -z $devs ]] && handleError "Fatal: No non-removable internal drives found for deployment target selection."
 
     if [[ -n $fdrive ]]; then
