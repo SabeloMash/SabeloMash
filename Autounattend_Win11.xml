@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<unattend xmlns="urn:schemas-microsoft-com:unattend">
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
     <!-- WINDOWS PE PHASE -->
     <settings pass="windowsPE">
@@ -86,38 +86,33 @@
                 <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
                 <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
                 <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-                <ProtectYourPC>3</ProtectYourPC>
+                <NetworkLocation>Work</NetworkLocation>
+                <ProtectYourPC>1</ProtectYourPC>
+                <SkipMachineOOBE>true</SkipMachineOOBE>
+                <SkipUserOOBE>true</SkipUserOOBE>
             </OOBE>
 
             <UserAccounts>
-
                 <LocalAccounts>
-
                     <LocalAccount wcm:action="add">
                         <Name>Admin</Name>
                         <Group>Administrators</Group>
-
                         <Password>
-                            <Value></Value>
+                            <Value>YourSecurePasswordHere</Value>
                             <PlainText>true</PlainText>
                         </Password>
-
                     </LocalAccount>
-
                 </LocalAccounts>
-
             </UserAccounts>
 
             <AutoLogon>
                 <Enabled>true</Enabled>
                 <Username>Admin</Username>
                 <LogonCount>1</LogonCount>
-
                 <Password>
-                    <Value></Value>
+                    <Value>YourSecurePasswordHere</Value>
                     <PlainText>true</PlainText>
                 </Password>
-
             </AutoLogon>
 
             <RegisteredOwner>Administrator</RegisteredOwner>
