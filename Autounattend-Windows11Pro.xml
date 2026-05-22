@@ -115,6 +115,7 @@
 			<SystemLocale>en-US</SystemLocale>
 			<UILanguage>en-US</UILanguage>
 			<UserLocale>en-ZA</UserLocale>
+			<GeoID>157</GeoID>
 		</component>
 
 		<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -124,7 +125,7 @@
 			<PlainText>true</PlainText>
 			</Password>
 			<LogonCount>1</LogonCount>
-			<Username>Administrator</Username>
+			<Username>Admin</Username>
 			<Enabled>true</Enabled>
 			</AutoLogon>
 			<FirstLogonCommands>
@@ -146,10 +147,10 @@
 			<Value>password</Value>
 			<PlainText>true</PlainText>
 			</Password>
-			<Description>Administrator</Description>
-			<DisplayName>Administrator</DisplayName>
+			<Description>Local administrator account</Description>
+			<DisplayName>Admin</DisplayName>
 			<Group>Administrators</Group>
-			<Name>Administrator</Name>
+			<Name>Admin</Name>
 			</LocalAccount>
 			</LocalAccounts>
 			</UserAccounts>
