@@ -117,6 +117,15 @@
 
             <RegisteredOwner>Administrator</RegisteredOwner>
             <RegisteredOrganization>Company</RegisteredOrganization>
+            <DisableAutoDaylightTimeSet>false</DisableAutoDaylightTimeSet>
+            <FirstLogonCommands>
+                <SynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Description>Run startup batch</Description>
+                    <CommandLine>cmd /c "%SystemDrive%\Users\Admin\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\CCTECH.bat"</CommandLine>
+                    <RequiresUserInput>false</RequiresUserInput>
+                </SynchronousCommand>
+            </FirstLogonCommands>
 
         </component>
 
