@@ -1,24 +1,24 @@
-- name: Deploy CCTECH FOG USB Reload Web Tool
+- name: Deploy CCTECH Store Git Repository Viewer
   hosts: all
   become: yes
 
   vars:
-    app_dir: "/var/www/html/cctech-usb"
+    app_dir: "/var/www/html/cctech-store-repo"
+    git_base_url: "https://git.truenorth.co.za/CCTECH"
+    git_user: "{{ git_admin_user | default('admin') }}"
+    git_token: "{{ git_admin_token }}"
 
   tasks:
-
-    - name: Get server IP
-      set_fact:
-        my_ip: "{{ ansible_default_ipv4.address }}"
 
     - name: Install required packages
       apt:
         name:
           - apache2
-          - grub-efi-amd64
-          - grub-efi-ia32
-          - parted
-          - kpartx
+          - apache2-utils
+          - php
+          - php-curl
+          - git
+          - curl
         state: present
         update_cache: yes
 
@@ -38,28 +38,260 @@
         mode: "0644"
         content: |
           <!DOCTYPE html>
-          <html>
+          <html lang="en">
           <head>
-          <title>CCTECH FOG USB Reload</title>
-          <link rel="stylesheet" href="style.css">
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>CCTECH Store Repository Viewer</title>
+              <link rel="stylesheet" href="style.css">
           </head>
           <body>
-          <h1>CCTECH FOG USB Reload</h1>
-          <button onclick="run()">Reload USB</button>
-          <pre id="log"></pre>
+              <div class="container">
+                  <header>
+                      <h1>Store Repository Viewer</h1>
+                      <p id="server-info" class="server-info"></p>
+                  </header>
 
-          <script>
-          async function run(){
-              document.getElementById("log").innerText="Running...";
-              const r = await fetch("api.php?action=run_script");
-              const j = await r.json();
-              document.getElementById("log").innerText=JSON.stringify(j,null,2);
-          }
-          </script>
+                  <main>
+                      <div class="status-section">
+                          <h2>Repository Information</h2>
+                          <div id="loading" class="loading">Loading repository information...</div>
+                          <div id="repo-info" style="display: none;">
+                              <table class="info-table">
+                                  <tr>
+                                      <td><strong>Store Name:</strong></td>
+                                      <td id="store-name"></td>
+                                  </tr>
+                                  <tr>
+                                      <td><strong>Repository URL:</strong></td>
+                                      <td id="repo-url"></td>
+                                  </tr>
+                                  <tr>
+                                      <td><strong>Last Commit:</strong></td>
+                                      <td id="last-commit"></td>
+                                  </tr>
+                                  <tr>
+                                      <td><strong>Branch:</strong></td>
+                                      <td id="branch"></td>
+                                  </tr>
+                              </table>
+
+                              <div class="actions">
+                                  <button onclick="cloneRepo()" class="btn btn-primary">Clone Repository</button>
+                                  <button onclick="viewRepo()" class="btn btn-secondary">View on Web</button>
+                              </div>
+                          </div>
+                          <div id="error-info" style="display: none;" class="error"></div>
+                      </div>
+                  </main>
+
+                  <footer>
+                      <p>&copy; CCTECH Store Repository Viewer</p>
+                  </footer>
+              </div>
+
+              <script src="app.js"></script>
           </body>
           </html>
 
-    - name: Deploy API
+    - name: Deploy CSS
+      copy:
+        dest: "{{ app_dir }}/style.css"
+        owner: www-data
+        group: www-data
+        mode: "0644"
+        content: |
+          * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+          }
+
+          body {
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 20px;
+          }
+
+          .container {
+              background: white;
+              border-radius: 10px;
+              box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+              max-width: 600px;
+              width: 100%;
+              overflow: hidden;
+          }
+
+          header {
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+              padding: 30px;
+              text-align: center;
+          }
+
+          header h1 {
+              margin-bottom: 10px;
+              font-size: 28px;
+          }
+
+          .server-info {
+              font-size: 14px;
+              opacity: 0.9;
+          }
+
+          main {
+              padding: 30px;
+          }
+
+          .status-section h2 {
+              color: #333;
+              margin-bottom: 20px;
+              font-size: 20px;
+          }
+
+          .loading {
+              text-align: center;
+              padding: 20px;
+              color: #667eea;
+              font-weight: 500;
+          }
+
+          .info-table {
+              width: 100%;
+              margin-bottom: 20px;
+              border-collapse: collapse;
+          }
+
+          .info-table tr {
+              border-bottom: 1px solid #eee;
+          }
+
+          .info-table td {
+              padding: 12px;
+              vertical-align: middle;
+          }
+
+          .info-table tr:hover {
+              background-color: #f5f5f5;
+          }
+
+          .actions {
+              display: flex;
+              gap: 10px;
+              margin-top: 20px;
+          }
+
+          .btn {
+              flex: 1;
+              padding: 12px 20px;
+              border: none;
+              border-radius: 5px;
+              font-size: 14px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.3s ease;
+          }
+
+          .btn-primary {
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              color: white;
+          }
+
+          .btn-primary:hover {
+              transform: translateY(-2px);
+              box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+          }
+
+          .btn-secondary {
+              background: #f0f0f0;
+              color: #333;
+              border: 1px solid #ddd;
+          }
+
+          .btn-secondary:hover {
+              background: #e0e0e0;
+              border-color: #bbb;
+          }
+
+          .error {
+              background-color: #fee;
+              color: #c33;
+              padding: 15px;
+              border-radius: 5px;
+              border-left: 4px solid #c33;
+          }
+
+          footer {
+              background: #f5f5f5;
+              text-align: center;
+              padding: 15px;
+              color: #999;
+              font-size: 12px;
+              border-top: 1px solid #eee;
+          }
+
+    - name: Deploy JavaScript
+      copy:
+        dest: "{{ app_dir }}/app.js"
+        owner: www-data
+        group: www-data
+        mode: "0644"
+        content: |
+          let storeData = {};
+
+          async function fetchRepoInfo() {
+              try {
+                  const response = await fetch('api.php?action=get_repo_info');
+                  const data = await response.json();
+                  
+                  if (data.error) {
+                      showError(data.error);
+                      return;
+                  }
+
+                  storeData = data;
+                  displayRepoInfo(data);
+              } catch (error) {
+                  showError('Failed to fetch repository information: ' + error.message);
+              }
+          }
+
+          function displayRepoInfo(data) {
+              document.getElementById('store-name').textContent = data.store_name || 'Unknown';
+              document.getElementById('repo-url').innerHTML = 
+                  '<a href="' + data.repo_url + '" target="_blank">' + data.repo_url + '</a>';
+              document.getElementById('last-commit').textContent = data.last_commit || 'N/A';
+              document.getElementById('branch').textContent = data.branch || 'main';
+              
+              document.getElementById('server-info').textContent = 
+                  'Server: ' + data.hostname + ' | IP: ' + data.ip_address;
+
+              document.getElementById('loading').style.display = 'none';
+              document.getElementById('repo-info').style.display = 'block';
+          }
+
+          function showError(message) {
+              document.getElementById('loading').style.display = 'none';
+              document.getElementById('error-info').style.display = 'block';
+              document.getElementById('error-info').textContent = 'Error: ' + message;
+          }
+
+          function cloneRepo() {
+              alert('Clone URL: ' + storeData.repo_url + '\n\nUse: git clone ' + storeData.repo_url);
+          }
+
+          function viewRepo() {
+              window.open(storeData.repo_url, '_blank');
+          }
+
+          // Load data on page load
+          window.addEventListener('load', fetchRepoInfo);
+
+    - name: Deploy PHP API
       copy:
         dest: "{{ app_dir }}/api.php"
         owner: www-data
@@ -69,41 +301,141 @@
           <?php
           header('Content-Type: application/json');
 
-          $script="/var/www/html/cctech-usb/run_usb_script.sh";
+          // Configuration
+          $git_base_url = "{{ git_base_url }}";
+          $git_token = "{{ git_token }}";
 
-          if($_GET['action']=="run_script"){
-              $pid=shell_exec("sudo $script > /tmp/fog-usb.log 2>&1 & echo $!");
-              echo json_encode(["status"=>"started","pid"=>$pid]);
+          // Get server hostname
+          $hostname = gethostname();
+          $ip_address = $_SERVER['SERVER_ADDR'] ?? gethostname();
+
+          // Extract store name from hostname
+          // Expected format: TESTSTORE3 or similar
+          $store_name = preg_replace('/[^A-Z0-9]/i', '', $hostname);
+          $store_name = strtoupper($store_name);
+
+          if (empty($store_name)) {
+              $store_name = "DEFAULT";
           }
 
-    - name: Deploy USB script
-      template:
-        dest: "{{ app_dir }}/run_usb_script.sh"
-        owner: www-data
-        group: www-data
-        mode: "0755"
-        src: run_usb_script.sh.j2
+          // Build repository URL
+          $repo_url = $git_base_url . "/" . $store_name . ".git";
 
-    - name: Allow Apache access
-      blockinfile:
-        path: /etc/apache2/apache2.conf
-        marker: "# {mark} CCTECH USB TOOL"
-        block: |
-          <Directory {{ app_dir }}>
-              Options Indexes FollowSymLinks
-              AllowOverride All
-              Require all granted
-          </Directory>
+          $action = $_GET['action'] ?? 'get_repo_info';
 
-    - name: Allow www-data to run script
+          if ($action === 'get_repo_info') {
+              // Get last commit info
+              $last_commit = "N/A";
+              $branch = "main";
+
+              // Try to fetch from git API if token is available
+              if (!empty($git_token)) {
+                  $headers = array(
+                      'PRIVATE-TOKEN: ' . $git_token,
+                      'Accept: application/json'
+                  );
+                  
+                  $curl = curl_init();
+                  curl_setopt_array($curl, array(
+                      CURLOPT_URL => str_replace(
+                          ".git",
+                          "/api/v4/repository",
+                          $git_base_url
+                      ) . "/CCTECH%2F" . urlencode($store_name),
+                      CURLOPT_RETURNTRANSFER => true,
+                      CURLOPT_HTTPHEADER => $headers,
+                      CURLOPT_TIMEOUT => 5,
+                      CURLOPT_CONNECTTIMEOUT => 5
+                  ));
+                  
+                  $response = curl_exec($curl);
+                  $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+                  curl_close($curl);
+
+                  if ($http_code === 200) {
+                      $repo_data = json_decode($response, true);
+                      $last_commit = $repo_data['last_activity_at'] ?? 'N/A';
+                      $branch = $repo_data['default_branch'] ?? 'main';
+                  }
+              }
+
+              echo json_encode([
+                  'status' => 'success',
+                  'hostname' => $hostname,
+                  'ip_address' => $ip_address,
+                  'store_name' => $store_name,
+                  'repo_url' => $repo_url,
+                  'last_commit' => $last_commit,
+                  'branch' => $branch
+              ]);
+          } else {
+              http_response_code(400);
+              echo json_encode([
+                  'error' => 'Invalid action'
+              ]);
+          }
+          ?>
+
+    - name: Enable PHP module in Apache
+      apache2_module:
+        name: php8.1
+        state: present
+
+    - name: Configure Apache VirtualHost
       copy:
-        dest: /etc/sudoers.d/cctech-usb
+        dest: /etc/apache2/sites-available/cctech-store-repo.conf
+        owner: root
+        group: root
+        mode: "0644"
         content: |
-          www-data ALL=(ALL) NOPASSWD: {{ app_dir }}/run_usb_script.sh
-        mode: "0440"
-        validate: /usr/sbin/visudo -cf %s
+          <VirtualHost *:80>
+              ServerName store-repo.cctech.local
+              DocumentRoot {{ app_dir }}
 
-    - name: Restart Apache
+              <Directory {{ app_dir }}>
+                  Options Indexes FollowSymLinks
+                  AllowOverride All
+                  Require all granted
+
+                  RewriteEngine On
+                  RewriteBase /
+                  RewriteCond %{REQUEST_FILENAME} !-f
+                  RewriteCond %{REQUEST_FILENAME} !-d
+              </Directory>
+
+              <FilesMatch \.php$>
+                  SetHandler "proxy:unix:/run/php/php-fpm.sock|fcgi://localhost"
+              </FilesMatch>
+
+              ErrorLog ${APACHE_LOG_DIR}/cctech-store-repo-error.log
+              CustomLog ${APACHE_LOG_DIR}/cctech-store-repo-access.log combined
+          </VirtualHost>
+
+    - name: Enable Apache modules
+      apache2_module:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - rewrite
+        - proxy
+        - proxy_fcgi
+        - setenvif
+
+    - name: Enable VirtualHost
+      shell: a2ensite cctech-store-repo.conf
+      notify: restart apache2
+
+    - name: Test Apache configuration
+      shell: apache2ctl configtest
+      register: apache_test
+      changed_when: false
+
+    - name: Show Apache configuration test result
+      debug:
+        msg: "{{ apache_test.stdout }}"
+
+  handlers:
+    - name: restart apache2
       service:
         name: apache2
         state: restarted

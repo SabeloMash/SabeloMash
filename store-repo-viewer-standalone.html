@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCTECH Store Repository Viewer - Standalone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            max-width: 600px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .server-info {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        main {
+            padding: 30px;
+        }
+
+        .status-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .info-table {
+            width: 100%;
+            margin-bottom: 20px;
+            border-collapse: collapse;
+        }
+
+        .info-table tr {
+            border-bottom: 1px solid #eee;
+        }
+
+        .info-table td {
+            padding: 12px;
+            vertical-align: middle;
+        }
+
+        .info-table tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .info-table a {
+            color: #667eea;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        .info-table a:hover {
+            text-decoration: underline;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+            border-color: #bbb;
+        }
+
+        .error {
+            background-color: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #c33;
+        }
+
+        .success {
+            background-color: #efe;
+            color: #3c3;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #3c3;
+        }
+
+        .input-section {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .input-section label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .input-section input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            font-family: monospace;
+            margin-bottom: 10px;
+        }
+
+        .input-section input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+        }
+
+        .input-section small {
+            color: #999;
+            display: block;
+            margin-top: -8px;
+            margin-bottom: 10px;
+        }
+
+        footer {
+            background: #f5f5f5;
+            text-align: center;
+            padding: 15px;
+            color: #999;
+            font-size: 12px;
+            border-top: 1px solid #eee;
+        }
+
+        .code-block {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 10px;
+            overflow-x: auto;
+            border-left: 3px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Store Repository Viewer</h1>
+            <p id="server-info" class="server-info">Standalone Version</p>
+        </header>
+
+        <main>
+            <div class="input-section">
+                <label for="git-base-url">Git Base URL:</label>
+                <input type="text" id="git-base-url" value="https://git.truenorth.co.za/CCTECH" placeholder="e.g., https://git.truenorth.co.za/CCTECH">
+                <small>Example: https://git.truenorth.co.za/CCTECH</small>
+
+                <label for="store-name-input">Store Name (or hostname):</label>
+                <input type="text" id="store-name-input" placeholder="e.g., TESTSTORE3" value="">
+                <small>Leave empty to auto-detect from hostname</small>
+
+                <label for="git-token">GitLab Token (optional):</label>
+                <input type="password" id="git-token" placeholder="glpat-xxxxxxxxxxxx">
+                <small>For GitLab API access (read-only token recommended)</small>
+
+                <button class="btn btn-primary" onclick="updateRepoInfo()" style="width: 100%;">Generate Repository Info</button>
+            </div>
+
+            <div class="status-section">
+                <h2>Repository Information</h2>
+                <div id="loading" class="loading" style="display: none;">Loading repository information...</div>
+                <div id="repo-info" style="display: none;">
+                    <table class="info-table">
+                        <tr>
+                            <td><strong>Server Hostname:</strong></td>
+                            <td id="hostname"></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Store Name:</strong></td>
+                            <td id="store-name"></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Repository URL:</strong></td>
+                            <td id="repo-url"></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Last Commit:</strong></td>
+                            <td id="last-commit"></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Branch:</strong></td>
+                            <td id="branch"></td>
+                        </tr>
+                    </table>
+
+                    <div class="success" style="display: none;" id="success-msg">
+                        ✓ Repository information loaded successfully
+                    </div>
+
+                    <div class="actions">
+                        <button onclick="copyCloneUrl()" class="btn btn-primary">Copy Clone URL</button>
+                        <button onclick="viewRepo()" class="btn btn-secondary">View on Web</button>
+                    </div>
+
+                    <div class="code-block" id="clone-code" style="display: none;">
+                        <strong>Git Clone Command:</strong><br>
+                        <code id="clone-command">git clone https://git.truenorth.co.za/CCTECH/TESTSTORE3.git</code>
+                    </div>
+                </div>
+                <div id="error-info" style="display: none;" class="error"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; CCTECH Store Repository Viewer - Standalone Version</p>
+            <p>For production deployment, use the Ansible playbook: <code>Webapp.yml</code></p>
+        </footer>
+    </div>
+
+    <script>
+        let storeData = {};
+
+        function autoDetectStoreName() {
+            // Try to detect from browser window location or hostname
+            try {
+                const hostname = window.location.hostname || 'UNKNOWN';
+                return hostname.split('.')[0].toUpperCase();
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function extractStoreName(hostname, gitBaseUrl) {
+            // Remove non-alphanumeric characters
+            const storeName = hostname.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            return storeName || 'DEFAULT';
+        }
+
+        function updateRepoInfo() {
+            const gitBaseUrl = document.getElementById('git-base-url').value;
+            let storeName = document.getElementById('store-name-input').value;
+            const gitToken = document.getElementById('git-token').value;
+
+            if (!storeName) {
+                storeName = autoDetectStoreName();
+                if (!storeName || storeName === 'LOCALHOST') {
+                    storeName = 'TESTSTORE3'; // Default for local testing
+                }
+                document.getElementById('store-name-input').value = storeName;
+            } else {
+                storeName = extractStoreName(storeName, gitBaseUrl);
+            }
+
+            const repoUrl = gitBaseUrl.replace(/\/$/, '') + '/' + storeName + '.git';
+
+            storeData = {
+                hostname: storeName,
+                store_name: storeName,
+                repo_url: repoUrl,
+                last_commit: 'N/A',
+                branch: 'main'
+            };
+
+            // Try to fetch from GitLab API if token is provided
+            if (gitToken) {
+                fetchGitLabInfo(gitToken, storeName, gitBaseUrl);
+            } else {
+                displayRepoInfo(storeData);
+            }
+        }
+
+        async function fetchGitLabInfo(token, storeName, gitBaseUrl) {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('repo-info').style.display = 'none';
+                document.getElementById('error-info').style.display = 'none';
+
+                // Construct API URL (works with GitLab)
+                const apiBaseUrl = gitBaseUrl.replace(/\/api.*/, '/api/v4');
+                const projectPath = 'CCTECH%2F' + encodeURIComponent(storeName);
+                const apiUrl = apiBaseUrl + '/projects/' + projectPath;
+
+                const response = await fetch(apiUrl, {
+                    headers: {
+                        'PRIVATE-TOKEN': token,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    storeData.last_commit = data.last_activity_at || 'N/A';
+                    storeData.branch = data.default_branch || 'main';
+                }
+
+                displayRepoInfo(storeData);
+            } catch (error) {
+                console.error('GitLab API Error:', error);
+                // Fall back to basic display without API data
+                displayRepoInfo(storeData);
+            }
+        }
+
+        function displayRepoInfo(data) {
+            document.getElementById('hostname').textContent = data.hostname || 'Unknown';
+            document.getElementById('store-name').textContent = data.store_name || 'Unknown';
+            document.getElementById('repo-url').innerHTML = 
+                '<a href="' + data.repo_url + '" target="_blank">' + data.repo_url + '</a>';
+            document.getElementById('last-commit').textContent = data.last_commit || 'N/A';
+            document.getElementById('branch').textContent = data.branch || 'main';
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('repo-info').style.display = 'block';
+            document.getElementById('success-msg').style.display = 'block';
+
+            // Set clone command
+            document.getElementById('clone-command').textContent = 'git clone ' + data.repo_url;
+            document.getElementById('clone-code').style.display = 'block';
+        }
+
+        function copyCloneUrl() {
+            const cloneUrl = 'git clone ' + storeData.repo_url;
+            navigator.clipboard.writeText(cloneUrl).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+
+        function viewRepo() {
+            window.open(storeData.repo_url, '_blank');
+        }
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            const detectedName = autoDetectStoreName();
+            if (detectedName && detectedName !== 'LOCALHOST') {
+                document.getElementById('store-name-input').value = detectedName;
+            }
+        });
+
+        // Allow Enter key to trigger update
+        document.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                updateRepoInfo();
+            }
+        });
+    </script>
+</body>
+</html>

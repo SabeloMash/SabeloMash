@@ -1,0 +1,594 @@
+- name: Deploy CC Tech Download Center Web Tool
+  hosts: all
+  become: yes
+  vars:
+    app_dir: "/var/www/html/fog/cctech"
+    apache_config_file: "/etc/apache2/sites-available/001-fog.conf"
+
+  tasks:
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Deploy index.html
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/index.html"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>CC Tech Download Center</title>
+              <link rel="stylesheet" href="style.css">
+          </head>
+          <body>
+              <div class="page-bg"></div>
+              <main class="container">
+                  <header class="header">
+                      <h1>CC Tech Download Center</h1>
+                      <p>Quick access to imaging tools and support files.</p>
+                      <a class="usb-link" href="/fog/usb/">Open USB Reload Web App</a>
+                  </header>
+
+                  <section class="downloads" id="downloads-list">
+                      <article class="download-card" data-file-id="pcdoctor16">
+                          <div class="file-info">
+                              <h2>PCDoctor v16.1</h2>
+                              <p class="filename">PCDoctor_16.1.iso</p>
+                          </div>
+                          <div class="actions">
+                              <span class="indicator unknown" id="indicator-pcdoctor16">Checking...</span>
+                              <a id="btn-pcdoctor16" class="download-btn disabled" href="#" aria-disabled="true">Download</a>
+                          </div>
+                      </article>
+
+                      <article class="download-card" data-file-id="rufus">
+                          <div class="file-info">
+                              <h2>Rufus (Latest)</h2>
+                              <p class="filename">Latest .exe from GitHub releases</p>
+                          </div>
+                          <div class="actions">
+                              <span class="indicator unknown" id="indicator-rufus">Checking...</span>
+                              <a id="btn-rufus" class="download-btn disabled" href="#" aria-disabled="true">Download</a>
+                          </div>
+                      </article>
+
+                      <article class="download-card" data-file-id="pcdoctor17">
+                          <div class="file-info">
+                              <h2>PCDoctor v17</h2>
+                              <p class="filename">PCDoctor_17.iso</p>
+                          </div>
+                          <div class="actions">
+                              <span class="indicator unknown" id="indicator-pcdoctor17">Checking...</span>
+                              <a id="btn-pcdoctor17" class="download-btn disabled" href="#" aria-disabled="true">Download</a>
+                          </div>
+                      </article>
+
+                      <article class="download-card" data-file-id="win11v123">
+                          <div class="file-info">
+                              <h2>Windows 11 v1.23</h2>
+                              <p class="filename">WIN11_V1.23.iso</p>
+                          </div>
+                          <div class="actions">
+                              <span class="indicator unknown" id="indicator-win11v123">Checking...</span>
+                              <a id="btn-win11v123" class="download-btn disabled" href="#" aria-disabled="true">Download</a>
+                          </div>
+                      </article>
+
+                      <article class="download-card" data-file-id="cheatsheet">
+                          <div class="file-info">
+                              <h2>CC Tech Cheat Sheet</h2>
+                              <p class="filename">cctech cheatsheet_v1.pdf</p>
+                          </div>
+                          <div class="actions">
+                              <span class="indicator unknown" id="indicator-cheatsheet">Checking...</span>
+                              <a id="btn-cheatsheet" class="download-btn disabled" href="#" aria-disabled="true">Download</a>
+                          </div>
+                      </article>
+                  </section>
+              </main>
+              <script src="app.js"></script>
+          </body>
+          </html>
+
+    - name: Deploy style.css
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/style.css"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          :root {
+              --bg-1: #fbc241;
+              --bg-2: #ffe08a;
+              --card: #202224;
+              --text: #f4f4f4;
+              --muted: #b9b9b9;
+              --ok: #1f9d55;
+              --bad: #d93025;
+              --unknown: #8a8a8a;
+              --action: #1877f2;
+              --action-hover: #166fe5;
+          }
+
+          * {
+              box-sizing: border-box;
+          }
+
+          body {
+              margin: 0;
+              min-height: 100vh;
+              font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+              color: var(--text);
+              background: linear-gradient(160deg, var(--bg-1) 0%, var(--bg-2) 100%);
+              padding: 2rem 1rem;
+          }
+
+          .page-bg {
+              position: fixed;
+              inset: 0;
+              background: radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.2), transparent 40%);
+              pointer-events: none;
+              z-index: 0;
+          }
+
+          .container {
+              position: relative;
+              z-index: 1;
+              max-width: 960px;
+              margin: 0 auto;
+              background: rgba(32, 34, 36, 0.95);
+              border-radius: 12px;
+              padding: 1.5rem;
+              box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+          }
+
+          .header {
+              margin-bottom: 1.25rem;
+              text-align: center;
+          }
+
+          .header h1 {
+              margin: 0 0 0.5rem;
+              color: #fbc241;
+              font-size: 1.9rem;
+          }
+
+          .header p {
+              margin: 0 0 1rem;
+              color: var(--muted);
+          }
+
+          .usb-link {
+              display: inline-block;
+              color: #111;
+              background: #fbc241;
+              text-decoration: none;
+              font-weight: 700;
+              padding: 0.55rem 0.9rem;
+              border-radius: 8px;
+          }
+
+          .usb-link:hover {
+              filter: brightness(0.95);
+          }
+
+          .downloads {
+              display: grid;
+              grid-template-columns: 1fr;
+              gap: 0.8rem;
+          }
+
+          .download-card {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 1rem;
+              background: #2a2c2f;
+              border: 1px solid #3b3d40;
+              border-radius: 10px;
+              padding: 0.95rem;
+          }
+
+          .file-info h2 {
+              margin: 0;
+              font-size: 1.1rem;
+          }
+
+          .filename {
+              margin: 0.25rem 0 0;
+              color: var(--muted);
+              font-size: 0.95rem;
+          }
+
+          .actions {
+              display: flex;
+              align-items: center;
+              gap: 0.65rem;
+              flex-wrap: wrap;
+              justify-content: flex-end;
+          }
+
+          .indicator {
+              min-width: 110px;
+              text-align: center;
+              border-radius: 999px;
+              padding: 0.35rem 0.6rem;
+              font-size: 0.85rem;
+              font-weight: 700;
+              border: 1px solid transparent;
+          }
+
+          .indicator.ok {
+              background: rgba(31, 157, 85, 0.15);
+              color: #9effc2;
+              border-color: rgba(31, 157, 85, 0.6);
+          }
+
+          .indicator.missing {
+              background: rgba(217, 48, 37, 0.15);
+              color: #ffc1bb;
+              border-color: rgba(217, 48, 37, 0.6);
+          }
+
+          .indicator.unknown {
+              background: rgba(138, 138, 138, 0.16);
+              color: #e4e4e4;
+              border-color: rgba(138, 138, 138, 0.6);
+          }
+
+          .indicator.ok::before {
+              content: "\2714  ";
+          }
+
+          .indicator.missing::before {
+              content: "\2716  ";
+          }
+
+          .indicator.unknown::before {
+              content: "\2026  ";
+          }
+
+          .download-btn {
+              background: var(--action);
+              color: #fff;
+              text-decoration: none;
+              padding: 0.5rem 0.9rem;
+              border-radius: 8px;
+              font-weight: 700;
+              transition: background-color 0.2s ease;
+          }
+
+          .download-btn:hover {
+              background: var(--action-hover);
+          }
+
+          .download-btn.disabled,
+          .download-btn.disabled:hover {
+              background: #666;
+              cursor: not-allowed;
+              pointer-events: none;
+          }
+
+          @media (max-width: 720px) {
+              .download-card {
+                  flex-direction: column;
+                  align-items: flex-start;
+              }
+
+              .actions {
+                  width: 100%;
+                  justify-content: flex-start;
+              }
+          }
+
+    - name: Deploy app.js
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/app.js"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          document.addEventListener('DOMContentLoaded', () => {
+              const fileIds = ['pcdoctor16', 'rufus', 'pcdoctor17', 'win11v123', 'cheatsheet'];
+
+              function setButtonState(fileId, enabled, url, external) {
+                  const btn = document.getElementById(`btn-${fileId}`);
+                  if (!btn) {
+                      return;
+                  }
+
+                  if (enabled) {
+                      btn.classList.remove('disabled');
+                      btn.setAttribute('aria-disabled', 'false');
+                      btn.href = url;
+                      if (external) {
+                          btn.target = '_blank';
+                          btn.rel = 'noopener noreferrer';
+                          btn.removeAttribute('download');
+                      } else {
+                          btn.removeAttribute('target');
+                          btn.removeAttribute('rel');
+                          btn.setAttribute('download', '');
+                      }
+                  } else {
+                      btn.classList.add('disabled');
+                      btn.setAttribute('aria-disabled', 'true');
+                      btn.href = '#';
+                      btn.removeAttribute('target');
+                      btn.removeAttribute('rel');
+                  }
+              }
+
+              function setIndicator(fileId, exists, message) {
+                  const indicator = document.getElementById(`indicator-${fileId}`);
+                  if (!indicator) {
+                      return;
+                  }
+
+                  indicator.classList.remove('ok', 'missing', 'unknown');
+                  if (exists === true) {
+                      indicator.classList.add('ok');
+                      indicator.textContent = message || 'Available';
+                  } else if (exists === false) {
+                      indicator.classList.add('missing');
+                      indicator.textContent = message || 'Missing';
+                  } else {
+                      indicator.classList.add('unknown');
+                      indicator.textContent = 'Checking...';
+                  }
+              }
+
+              async function refreshStatus() {
+                  try {
+                      const response = await fetch('api.php?action=status', { cache: 'no-store' });
+                      const data = await response.json();
+
+                      fileIds.forEach((fileId) => {
+                          const details = data.files && data.files[fileId];
+                          if (!details) {
+                              setIndicator(fileId, false, 'Missing');
+                              setButtonState(fileId, false);
+                              return;
+                          }
+
+                          setIndicator(fileId, details.exists, details.exists ? 'Available' : 'Missing');
+                          setButtonState(fileId, details.exists, details.url, details.external === true);
+                      });
+                  } catch (error) {
+                      console.error('Status check failed:', error);
+                      fileIds.forEach((fileId) => {
+                          setIndicator(fileId, false, 'Error');
+                          setButtonState(fileId, false);
+                      });
+                  }
+              }
+
+              refreshStatus();
+              setInterval(refreshStatus, 10000);
+          });
+
+    - name: Deploy api.php
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/api.php"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          <?php
+          function get_rufus_latest_exe_url() {
+              $api_url = 'https://api.github.com/repos/pbatard/rufus/releases/latest';
+              $context = stream_context_create([
+                  'http' => [
+                      'method' => 'GET',
+                      'header' => "User-Agent: cctech-download-center\r\nAccept: application/vnd.github+json\r\n",
+                      'timeout' => 8
+                  ]
+              ]);
+
+              $json = @file_get_contents($api_url, false, $context);
+              if ($json === false) {
+                  return 'https://github.com/pbatard/rufus/releases/latest/download/rufus.exe';
+              }
+
+              $release = json_decode($json, true);
+              if (!is_array($release) || !isset($release['assets']) || !is_array($release['assets'])) {
+                  return 'https://github.com/pbatard/rufus/releases/latest/download/rufus.exe';
+              }
+
+              foreach ($release['assets'] as $asset) {
+                  if (!isset($asset['name']) || !isset($asset['browser_download_url'])) {
+                      continue;
+                  }
+
+                  $name = strtolower($asset['name']);
+                  if (substr($name, -4) === '.exe') {
+                      return $asset['browser_download_url'];
+                  }
+              }
+
+              return 'https://github.com/pbatard/rufus/releases/latest/download/rufus.exe';
+          }
+
+          function find_file_case_insensitive($dir, $filename) {
+              if (!is_dir($dir)) {
+                  return null;
+              }
+
+              $entries = @scandir($dir);
+              if ($entries === false) {
+                  return null;
+              }
+
+              foreach ($entries as $entry) {
+                  if (strcasecmp($entry, $filename) === 0) {
+                      return rtrim($dir, '/') . '/' . $entry;
+                  }
+              }
+
+              return null;
+          }
+
+          function get_files_map($images_folder) {
+              return [
+                  'pcdoctor16' => [
+                      'name' => 'PCDoctor_16.1.iso',
+                      'candidates' => ['PCDoctor_16.1.iso', 'PCDoctor v16.1.iso'],
+                      'external' => false,
+                  ],
+                  'pcdoctor17' => [
+                      'name' => 'PCDoctor_17.iso',
+                      'candidates' => ['PCDoctor_17.iso', 'PCDoctor 17.iso'],
+                      'external' => false,
+                  ],
+                  'win11v123' => [
+                      'name' => 'WIN11_V1.23.iso',
+                      'candidates' => ['WIN11_V1.23.iso', 'Win11_v1.23.iso'],
+                      'external' => false,
+                  ],
+                  'cheatsheet' => [
+                      'name' => 'cctech cheatsheet_v1.pdf',
+                      'candidates' => ['cctech cheatsheet_v1.pdf', 'CCTECH cheatsheet_v1.pdf'],
+                      'external' => false,
+                  ],
+                  'rufus' => [
+                      'name' => 'Rufus latest exe',
+                      'path' => null,
+                      'url' => get_rufus_latest_exe_url(),
+                      'external' => true,
+                  ]
+              ];
+          }
+
+          function resolve_local_file($images_folder, $file) {
+              if (!isset($file['candidates']) || !is_array($file['candidates'])) {
+                  return null;
+              }
+
+              foreach ($file['candidates'] as $candidate) {
+                  $direct = rtrim($images_folder, '/') . '/' . $candidate;
+                  if (file_exists($direct)) {
+                      return $direct;
+                  }
+
+                  $found = find_file_case_insensitive($images_folder, $candidate);
+                  if (!empty($found) && file_exists($found)) {
+                      return $found;
+                  }
+              }
+
+              return null;
+          }
+
+          $action = $_GET['action'] ?? '';
+          $id = $_GET['id'] ?? '';
+          $images_folder = '/images2';
+          $files = get_files_map($images_folder);
+
+          if ($action === 'status') {
+              header('Content-Type: application/json');
+
+              $response = ['files' => []];
+
+              foreach ($files as $file_id => $file) {
+                  if (!empty($file['external'])) {
+                      $response['files'][$file_id] = [
+                          'exists' => !empty($file['url']),
+                          'url' => $file['url'],
+                          'external' => true,
+                      ];
+                      continue;
+                  }
+
+                  $resolved_path = resolve_local_file($images_folder, $file);
+                  $response['files'][$file_id] = [
+                      'exists' => !empty($resolved_path),
+                      'url' => 'api.php?action=download&id=' . urlencode($file_id),
+                      'external' => false,
+                  ];
+              }
+
+              echo json_encode($response);
+              exit;
+          }
+
+          if ($action === 'download') {
+              if (empty($id) || !isset($files[$id]) || !empty($files[$id]['external'])) {
+                  http_response_code(404);
+                  header('Content-Type: text/plain');
+                  echo 'File not found.';
+                  exit;
+              }
+
+              $file = $files[$id];
+              $resolved_path = resolve_local_file($images_folder, $file);
+
+              if (empty($resolved_path) || !is_readable($resolved_path)) {
+                  http_response_code(404);
+                  header('Content-Type: text/plain');
+                  echo 'File not found.';
+                  exit;
+              }
+
+              $basename = basename($resolved_path);
+              header('Content-Description: File Transfer');
+              header('Content-Type: application/octet-stream');
+              header('Content-Disposition: attachment; filename="' . $basename . '"');
+              header('Content-Length: ' . filesize($resolved_path));
+              header('Cache-Control: no-store, no-cache, must-revalidate');
+              header('Pragma: no-cache');
+
+              readfile($resolved_path);
+              exit;
+          }
+
+          header('Content-Type: application/json');
+          http_response_code(400);
+          echo json_encode(['error' => 'Invalid action']);
+          exit;
+
+    - name: Set permissions on parent directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - "/var/www"
+        - "/var/www/html"
+        - "/var/www/html/fog"
+
+    - name: Remove old Apache configuration block for CC Tech download center
+      ansible.builtin.blockinfile:
+        path: "{{ apache_config_file }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK FOR FOG CCTECH DOWNLOAD TOOL"
+        state: absent
+
+    - name: Add Apache directory configuration for CC Tech download center
+      ansible.builtin.blockinfile:
+        path: "{{ apache_config_file }}"
+        marker: "    # {mark} ANSIBLE MANAGED BLOCK FOR FOG CCTECH DOWNLOAD TOOL"
+        insertbefore: "</VirtualHost>"
+        block: |
+          Alias /cctech {{ app_dir }}
+          <Directory {{ app_dir }}>
+              Options FollowSymLinks
+              DirectoryIndex index.html
+              Require all granted
+          </Directory>
+      notify: Restart Apache
+
+  handlers:
+    - name: Restart Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted

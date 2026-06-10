@@ -1,0 +1,877 @@
+- name: Deploy CC Tech HDD Wipe Web Tool
+  hosts: all
+  become: yes
+  vars:
+    app_dir: "/var/www/html/fog/hddwipe"
+    apache_config_file: "/etc/apache2/sites-available/001-fog.conf"
+    callback_uri: "https://cctechapi.cashconverters.co.za:5199/api/DeviceDiagnostic/SaveComputerReload"
+
+  tasks:
+    - name: Ensure curl is installed
+      ansible.builtin.package:
+        name: curl
+        state: present
+
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Deploy index.html
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/index.html"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>CC Tech HDD Wipe</title>
+              <link rel="stylesheet" href="style.css">
+          </head>
+          <body>
+              <div class="page-bg"></div>
+              <main class="container">
+                  <header class="header">
+                      <h1>CC Tech HDD Wipe</h1>
+                      <p>Detect removable drives and securely wipe them.</p>
+                  </header>
+
+                  <section class="drive-summary">
+                      <h2>Detected Removable Drive</h2>
+                      <div class="drive-grid">
+                          <div class="field">
+                              <span class="label">Device</span>
+                              <span id="drive-device" class="value">-</span>
+                          </div>
+                          <div class="field">
+                              <span class="label">Size</span>
+                              <span id="drive-size" class="value">-</span>
+                          </div>
+                          <div class="field">
+                              <span class="label">Vendor</span>
+                              <span id="drive-vendor" class="value">-</span>
+                          </div>
+                          <div class="field">
+                              <span class="label">Model</span>
+                              <span id="drive-model" class="value">-</span>
+                          </div>
+                          <div class="field">
+                              <span class="label">Serial</span>
+                              <span id="drive-serial" class="value">-</span>
+                          </div>
+                      </div>
+                      <p id="drive-message" class="drive-message warning">Checking for removable drives...</p>
+                  </section>
+
+                  <section class="actions">
+                      <button id="quick-btn" class="action-btn" disabled>Quick Wipe (dd zero fill)</button>
+                      <button id="slow-btn" class="action-btn danger" disabled>In-Depth Wipe (dd random fill)</button>
+                  </section>
+
+                  <section class="process">
+                      <div class="status-row">
+                          <span class="status-label">Process Status</span>
+                          <span id="process-status" class="status-badge idle">Idle</span>
+                      </div>
+                      <pre id="output-log">No output yet...</pre>
+                  </section>
+              </main>
+              <script src="app.js"></script>
+          </body>
+          </html>
+
+    - name: Deploy style.css
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/style.css"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          :root {
+              --bg-1: #fbc241;
+              --bg-2: #ffe38e;
+              --card: #1f2226;
+              --panel: #2a2e33;
+              --text: #f4f4f4;
+              --muted: #c9c9c9;
+              --ok: #1f9d55;
+              --warn: #d18b00;
+              --bad: #d93025;
+              --action: #1877f2;
+              --action-hover: #0f62cf;
+          }
+
+          * {
+              box-sizing: border-box;
+          }
+
+          body {
+              margin: 0;
+              min-height: 100vh;
+              font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+              color: var(--text);
+              background: linear-gradient(150deg, var(--bg-1) 0%, var(--bg-2) 100%);
+              padding: 1.25rem;
+          }
+
+          .page-bg {
+              position: fixed;
+              inset: 0;
+              pointer-events: none;
+              background: radial-gradient(circle at 8% 10%, rgba(255, 255, 255, 0.24), transparent 34%);
+          }
+
+          .container {
+              position: relative;
+              z-index: 1;
+              max-width: 980px;
+              margin: 0 auto;
+              background: rgba(31, 34, 38, 0.95);
+              border-radius: 14px;
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+              padding: 1.25rem;
+          }
+
+          .header h1 {
+              margin: 0;
+              color: #fbc241;
+              font-size: 2rem;
+          }
+
+          .header p {
+              margin: 0.4rem 0 1.1rem;
+              color: var(--muted);
+          }
+
+          .drive-summary,
+          .process {
+              background: var(--panel);
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 12px;
+              padding: 1rem;
+              margin-bottom: 1rem;
+          }
+
+          .drive-summary h2 {
+              margin: 0 0 0.85rem;
+              font-size: 1.15rem;
+          }
+
+          .drive-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 0.75rem;
+          }
+
+          .field {
+              background: #22272d;
+              border: 1px solid rgba(255, 255, 255, 0.07);
+              border-radius: 8px;
+              padding: 0.65rem;
+          }
+
+          .label {
+              display: block;
+              font-size: 0.8rem;
+              color: var(--muted);
+              margin-bottom: 0.2rem;
+          }
+
+          .value {
+              display: block;
+              font-weight: 700;
+              word-break: break-word;
+          }
+
+          .drive-message {
+              margin: 0.8rem 0 0;
+              font-weight: 700;
+          }
+
+          .drive-message.ok {
+              color: #8ef0b5;
+          }
+
+          .drive-message.warning {
+              color: #ffd58a;
+          }
+
+          .drive-message.bad {
+              color: #ffb2aa;
+          }
+
+          .actions {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 0.8rem;
+              margin-bottom: 1rem;
+          }
+
+          .action-btn {
+              border: none;
+              border-radius: 10px;
+              background: var(--action);
+              color: #fff;
+              font-size: 1rem;
+              font-weight: 700;
+              padding: 0.9rem;
+              cursor: pointer;
+              transition: background-color 0.2s ease;
+          }
+
+          .action-btn:hover:not(:disabled) {
+              background: var(--action-hover);
+          }
+
+          .action-btn.danger {
+              background: #b83b30;
+          }
+
+          .action-btn.danger:hover:not(:disabled) {
+              background: #982d24;
+          }
+
+          .action-btn:disabled {
+              background: #666;
+              cursor: not-allowed;
+          }
+
+          .status-row {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              margin-bottom: 0.8rem;
+          }
+
+          .status-label {
+              font-weight: 700;
+          }
+
+          .status-badge {
+              border-radius: 999px;
+              padding: 0.3rem 0.7rem;
+              border: 1px solid transparent;
+              font-weight: 700;
+              font-size: 0.86rem;
+          }
+
+          .status-badge.idle {
+              background: rgba(170, 170, 170, 0.14);
+              border-color: rgba(170, 170, 170, 0.45);
+          }
+
+          .status-badge.running {
+              background: rgba(24, 119, 242, 0.18);
+              border-color: rgba(24, 119, 242, 0.6);
+              color: #bfdaff;
+          }
+
+          .status-badge.finished {
+              background: rgba(31, 157, 85, 0.18);
+              border-color: rgba(31, 157, 85, 0.6);
+              color: #9ef5c1;
+          }
+
+          .status-badge.error {
+              background: rgba(217, 48, 37, 0.18);
+              border-color: rgba(217, 48, 37, 0.6);
+              color: #ffb2aa;
+          }
+
+          #output-log {
+              margin: 0;
+              background: #13161a;
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              border-radius: 8px;
+              min-height: 230px;
+              max-height: 320px;
+              overflow: auto;
+              padding: 0.8rem;
+              font-size: 0.83rem;
+              line-height: 1.35;
+              color: #ebebeb;
+              white-space: pre-wrap;
+              word-break: break-word;
+          }
+
+          @media (max-width: 760px) {
+              .drive-grid,
+              .actions {
+                  grid-template-columns: 1fr;
+              }
+          }
+
+    - name: Deploy app.js
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/app.js"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          document.addEventListener('DOMContentLoaded', () => {
+              const driveDevice = document.getElementById('drive-device');
+              const driveSize = document.getElementById('drive-size');
+              const driveVendor = document.getElementById('drive-vendor');
+              const driveModel = document.getElementById('drive-model');
+              const driveSerial = document.getElementById('drive-serial');
+              const driveMessage = document.getElementById('drive-message');
+              const processStatus = document.getElementById('process-status');
+              const outputLog = document.getElementById('output-log');
+              const quickBtn = document.getElementById('quick-btn');
+              const slowBtn = document.getElementById('slow-btn');
+
+              let statusInterval = null;
+              let detectInterval = null;
+
+              function setProcessStatus(status, label) {
+                  processStatus.classList.remove('idle', 'running', 'finished', 'error');
+                  processStatus.classList.add(status);
+                  processStatus.textContent = label;
+              }
+
+              function setDriveInfo(data) {
+                  if (data && data.detected) {
+                      driveDevice.textContent = data.device || '-';
+                      driveSize.textContent = data.size_human || '-';
+                      driveVendor.textContent = data.vendor || '-';
+                      driveModel.textContent = data.model || '-';
+                      driveSerial.textContent = data.serial || '-';
+                      driveMessage.classList.remove('warning', 'bad');
+                      driveMessage.classList.add('ok');
+                      driveMessage.textContent = data.message || 'Removable drive detected and ready.';
+                      quickBtn.disabled = false;
+                      slowBtn.disabled = false;
+                  } else {
+                      driveDevice.textContent = '-';
+                      driveSize.textContent = '-';
+                      driveVendor.textContent = '-';
+                      driveModel.textContent = '-';
+                      driveSerial.textContent = '-';
+                      driveMessage.classList.remove('ok', 'bad');
+                      driveMessage.classList.add('warning');
+                      driveMessage.textContent = (data && data.message) ? data.message : 'No removable drive detected.';
+                      quickBtn.disabled = true;
+                      slowBtn.disabled = true;
+                  }
+              }
+
+              async function detectDrive() {
+                  try {
+                      const response = await fetch('api.php?action=detect_drive', { cache: 'no-store' });
+                      const data = await response.json();
+                      setDriveInfo(data);
+                  } catch (error) {
+                      console.error('Drive detection failed:', error);
+                      setDriveInfo({ detected: false, message: 'Detection error.' });
+                  }
+              }
+
+              async function refreshStatus() {
+                  try {
+                      const response = await fetch('api.php?action=get_status', { cache: 'no-store' });
+                      const data = await response.json();
+
+                      outputLog.textContent = data.log || 'No output yet...';
+                      outputLog.scrollTop = outputLog.scrollHeight;
+
+                      if (data.status === 'running') {
+                          setProcessStatus('running', 'Running');
+                          quickBtn.disabled = true;
+                          slowBtn.disabled = true;
+                      } else if (data.status === 'finished') {
+                          setProcessStatus('finished', 'Completed');
+                          if (statusInterval) {
+                              clearInterval(statusInterval);
+                              statusInterval = null;
+                          }
+                          detectDrive();
+                      } else if (data.status === 'error') {
+                          setProcessStatus('error', 'Error');
+                          if (statusInterval) {
+                              clearInterval(statusInterval);
+                              statusInterval = null;
+                          }
+                          detectDrive();
+                      } else {
+                          setProcessStatus('idle', 'Idle');
+                      }
+                  } catch (error) {
+                      console.error('Status refresh failed:', error);
+                      setProcessStatus('error', 'Error');
+                  }
+              }
+
+              async function startWipe(method) {
+                  quickBtn.disabled = true;
+                  slowBtn.disabled = true;
+                  setProcessStatus('running', 'Starting');
+                  outputLog.textContent = '';
+
+                  try {
+                      const response = await fetch('api.php?action=start_wipe&method=' + encodeURIComponent(method), {
+                          method: 'POST',
+                          cache: 'no-store'
+                      });
+                      const data = await response.json();
+
+                      if (data.status === 'started') {
+                          if (statusInterval) {
+                              clearInterval(statusInterval);
+                          }
+                          statusInterval = setInterval(refreshStatus, 2000);
+                          refreshStatus();
+                          return;
+                      }
+
+                      setProcessStatus('error', 'Error');
+                      outputLog.textContent = data.message || 'Failed to start wipe.';
+                      detectDrive();
+                  } catch (error) {
+                      console.error('Start wipe failed:', error);
+                      setProcessStatus('error', 'Error');
+                      outputLog.textContent = 'Failed to start wipe.';
+                      detectDrive();
+                  }
+              }
+
+              quickBtn.addEventListener('click', () => startWipe('quick'));
+              slowBtn.addEventListener('click', () => startWipe('slow'));
+
+              detectDrive();
+              refreshStatus();
+              detectInterval = setInterval(detectDrive, 5000);
+
+              window.addEventListener('beforeunload', () => {
+                  if (statusInterval) {
+                      clearInterval(statusInterval);
+                  }
+                  if (detectInterval) {
+                      clearInterval(detectInterval);
+                  }
+              });
+          });
+
+    - name: Deploy api.php
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/api.php"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          <?php
+          header('Content-Type: application/json');
+
+          $action = $_GET['action'] ?? '';
+          $method = $_GET['method'] ?? '';
+
+          $log_file = '/tmp/fos-hdd-wipe.log';
+          $pid_file = '/tmp/fos-hdd-wipe.pid';
+          $state_file = '/tmp/fos-hdd-wipe.state';
+
+          function clean_text($value) {
+              return trim((string)$value);
+          }
+
+          function is_process_running($pid) {
+              if (empty($pid)) {
+                  return false;
+              }
+              return file_exists('/proc/' . (int)$pid);
+          }
+
+          function read_state_file($path) {
+              $state = [];
+              if (!file_exists($path)) {
+                  return $state;
+              }
+
+              $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+              if ($lines === false) {
+                  return $state;
+              }
+
+              foreach ($lines as $line) {
+                  $pos = strpos($line, '=');
+                  if ($pos === false) {
+                      continue;
+                  }
+                  $key = substr($line, 0, $pos);
+                  $value = substr($line, $pos + 1);
+                  $state[$key] = $value;
+              }
+
+              return $state;
+          }
+
+          function get_removable_drive() {
+              $cmd = "sudo /usr/bin/lsblk -J -b -d -o NAME,RM,SIZE,MODEL,VENDOR,SERIAL,TYPE";
+              $json = shell_exec($cmd);
+              if (empty($json)) {
+                  return null;
+              }
+
+              $decoded = json_decode($json, true);
+              if (!is_array($decoded) || !isset($decoded['blockdevices']) || !is_array($decoded['blockdevices'])) {
+                  return null;
+              }
+
+              foreach ($decoded['blockdevices'] as $dev) {
+                  $rm = isset($dev['rm']) ? (int)$dev['rm'] : 0;
+                  $type = isset($dev['type']) ? $dev['type'] : '';
+                  if ($rm !== 1 || $type !== 'disk') {
+                      continue;
+                  }
+
+                  $name = clean_text($dev['name'] ?? '');
+                  if ($name === '') {
+                      continue;
+                  }
+
+                  $size_bytes = (int)($dev['size'] ?? 0);
+
+                  return [
+                      'device' => '/dev/' . $name,
+                      'size_bytes' => $size_bytes,
+                      'size_human' => human_size($size_bytes),
+                      'vendor' => clean_text($dev['vendor'] ?? ''),
+                      'model' => clean_text($dev['model'] ?? ''),
+                      'serial' => clean_text($dev['serial'] ?? ''),
+                  ];
+              }
+
+              return null;
+          }
+
+          function human_size($bytes) {
+              if ($bytes <= 0) {
+                  return '0 B';
+              }
+
+              $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+              $index = (int)floor(log($bytes, 1024));
+              $index = min($index, count($units) - 1);
+              $value = $bytes / pow(1024, $index);
+              return round($value, 2) . ' ' . $units[$index];
+          }
+
+          switch ($action) {
+              case 'detect_drive':
+                  $drive = get_removable_drive();
+                  if (empty($drive)) {
+                      echo json_encode([
+                          'detected' => false,
+                          'message' => 'No removable drive detected.'
+                      ]);
+                      exit;
+                  }
+
+                  echo json_encode([
+                      'detected' => true,
+                      'device' => $drive['device'],
+                      'size_human' => $drive['size_human'],
+                      'size_bytes' => $drive['size_bytes'],
+                      'vendor' => $drive['vendor'] !== '' ? $drive['vendor'] : 'Unknown',
+                      'model' => $drive['model'] !== '' ? $drive['model'] : 'Unknown',
+                      'serial' => $drive['serial'] !== '' ? $drive['serial'] : 'Unknown',
+                      'message' => 'Removable drive detected. Ready to wipe.'
+                  ]);
+                  exit;
+
+              case 'start_wipe':
+                  if (!in_array($method, ['quick', 'slow'], true)) {
+                      echo json_encode(['status' => 'error', 'message' => 'Invalid wipe method.']);
+                      exit;
+                  }
+
+                  $existing_pid = file_exists($pid_file) ? trim((string)file_get_contents($pid_file)) : '';
+                  if (is_process_running($existing_pid)) {
+                      echo json_encode(['status' => 'error', 'message' => 'A wipe job is already running.']);
+                      exit;
+                  }
+
+                  $drive = get_removable_drive();
+                  if (empty($drive)) {
+                      echo json_encode(['status' => 'error', 'message' => 'No removable drive detected.']);
+                      exit;
+                  }
+
+                  @unlink($state_file);
+                  file_put_contents($log_file, '');
+
+                  $script = __DIR__ . '/run_hdd_wipe.sh';
+                  $cmd = sprintf(
+                      'sudo %s %s %s %s %s %s %s > /dev/null 2>&1 & echo $!',
+                      escapeshellarg($script),
+                      escapeshellarg($drive['device']),
+                      escapeshellarg($method),
+                      escapeshellarg($log_file),
+                      escapeshellarg($state_file),
+                      escapeshellarg('{{ callback_uri }}'),
+                      escapeshellarg(json_encode($drive))
+                  );
+
+                  $pid = trim((string)shell_exec($cmd));
+                  if ($pid === '') {
+                      echo json_encode(['status' => 'error', 'message' => 'Failed to start wipe script.']);
+                      exit;
+                  }
+
+                  file_put_contents($pid_file, $pid);
+
+                  echo json_encode([
+                      'status' => 'started',
+                      'pid' => $pid,
+                      'device' => $drive['device'],
+                      'method' => $method
+                  ]);
+                  exit;
+
+              case 'get_status':
+                  $pid = file_exists($pid_file) ? trim((string)file_get_contents($pid_file)) : '';
+                  $running = is_process_running($pid);
+                  $log_content = file_exists($log_file) ? file_get_contents($log_file) : 'No output yet...';
+
+                  if ($running) {
+                      echo json_encode(['status' => 'running', 'log' => $log_content]);
+                      exit;
+                  }
+
+                  $state = read_state_file($state_file);
+                  if (!empty($state['STATUS']) && $state['STATUS'] === 'finished') {
+                      echo json_encode([
+                          'status' => 'finished',
+                          'log' => $log_content,
+                          'details' => $state
+                      ]);
+                      exit;
+                  }
+
+                  if (!empty($state['STATUS']) && $state['STATUS'] === 'error') {
+                      echo json_encode([
+                          'status' => 'error',
+                          'log' => $log_content,
+                          'details' => $state
+                      ]);
+                      exit;
+                  }
+
+                  if ($log_content !== '' && $log_content !== false) {
+                      echo json_encode(['status' => 'error', 'log' => $log_content]);
+                      exit;
+                  }
+
+                  echo json_encode(['status' => 'idle', 'log' => 'No output yet...']);
+                  exit;
+
+              default:
+                  http_response_code(400);
+                  echo json_encode(['error' => 'Invalid action']);
+                  exit;
+          }
+
+    - name: Deploy run_hdd_wipe.sh
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/run_hdd_wipe.sh"
+        owner: www-data
+        group: www-data
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          set -uo pipefail
+
+          DEVICE="$1"
+          METHOD="$2"
+          LOG_FILE="$3"
+          STATE_FILE="$4"
+          CALLBACK_URI="$5"
+          DRIVE_JSON="$6"
+
+          write_state() {
+              local status="$1"
+              local message="$2"
+              local callback_status="$3"
+              local completed_at
+              completed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+              cat > "$STATE_FILE" <<EOF
+          STATUS=$status
+          MESSAGE=$message
+          METHOD=$METHOD
+          DEVICE=$DEVICE
+          SIZE_BYTES=$SIZE_BYTES
+          SIZE_HUMAN=$SIZE_HUMAN
+          VENDOR=$VENDOR
+          MODEL=$MODEL
+          SERIAL=$SERIAL
+          CALLBACK_STATUS=$callback_status
+          COMPLETED_AT=$completed_at
+          EOF
+          }
+
+          mkdir -p "$(dirname "$LOG_FILE")"
+          touch "$LOG_FILE"
+          exec >> "$LOG_FILE" 2>&1
+
+          echo "==== HDD wipe started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") ===="
+          echo "Target device: $DEVICE"
+          echo "Method: $METHOD"
+
+          if [ ! -b "$DEVICE" ]; then
+              echo "Error: Device $DEVICE is not a block device."
+              SIZE_BYTES=0
+              SIZE_HUMAN="0 B"
+              VENDOR="unknown"
+              MODEL="unknown"
+              SERIAL="unknown"
+              write_state "error" "Target is not a block device" "not_sent"
+              exit 1
+          fi
+
+          RM_FLAG="$(lsblk -dn -o RM "$DEVICE" | tr -d ' ')"
+          if [ "$RM_FLAG" != "1" ]; then
+              echo "Error: Device $DEVICE is not removable."
+              SIZE_BYTES=0
+              SIZE_HUMAN="0 B"
+              VENDOR="unknown"
+              MODEL="unknown"
+              SERIAL="unknown"
+              write_state "error" "Target is not removable" "not_sent"
+              exit 1
+          fi
+
+          SIZE_BYTES="$(lsblk -dn -b -o SIZE "$DEVICE" | tr -d ' ')"
+          SIZE_HUMAN="$(lsblk -dn -o SIZE "$DEVICE" | tr -d ' ')"
+          VENDOR="$(lsblk -dn -o VENDOR "$DEVICE" | xargs)"
+          MODEL="$(lsblk -dn -o MODEL "$DEVICE" | xargs)"
+          SERIAL="$(lsblk -dn -o SERIAL "$DEVICE" | xargs)"
+
+          if [ -z "$VENDOR" ]; then VENDOR="unknown"; fi
+          if [ -z "$MODEL" ]; then MODEL="unknown"; fi
+          if [ -z "$SERIAL" ]; then SERIAL="unknown"; fi
+          if [ -z "$SIZE_BYTES" ]; then SIZE_BYTES=0; fi
+          if [ -z "$SIZE_HUMAN" ]; then SIZE_HUMAN="unknown"; fi
+
+          echo "Detected size: $SIZE_HUMAN ($SIZE_BYTES bytes)"
+          echo "Vendor/Model: $VENDOR / $MODEL"
+          echo "Serial: $SERIAL"
+
+          echo "Unmounting existing partitions on $DEVICE (if mounted)..."
+          umount "${DEVICE}"* 2>/dev/null || true
+
+          WIPE_LABEL=""
+
+          if [ "$METHOD" = "quick" ]; then
+              WIPE_LABEL="quick_dd_zero_fill"
+              echo "Starting quick wipe (dd if=/dev/zero)..."
+              dd if=/dev/zero of="$DEVICE" bs=16M status=progress conv=fsync
+          elif [ "$METHOD" = "slow" ]; then
+              WIPE_LABEL="slow_dd_random_fill"
+              echo "Starting in-depth wipe (dd if=/dev/urandom)..."
+              dd if=/dev/urandom of="$DEVICE" bs=4M status=progress conv=fsync
+          else
+              echo "Error: Invalid method '$METHOD'."
+              write_state "error" "Invalid wipe method" "not_sent"
+              exit 1
+          fi
+
+          dd_exit=$?
+          sync
+
+          if [ $dd_exit -ne 0 ]; then
+              echo "Error: dd failed with exit code $dd_exit"
+              write_state "error" "Wipe command failed" "not_sent"
+              exit 1
+          fi
+
+          COMPLETED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          CALLBACK_STATUS="failed"
+
+                    PAYLOAD_FILE="/tmp/fog-hdd-wipe-payload.json"
+
+                    cat > "$PAYLOAD_FILE" <<EOF
+                    {
+                        "wiped": true,
+                        "device": "$DEVICE",
+                        "sizeBytes": "$SIZE_BYTES",
+                        "sizeHuman": "$SIZE_HUMAN",
+                        "vendor": "$VENDOR",
+                        "model": "$MODEL",
+                        "serial": "$SERIAL",
+                        "method": "$METHOD",
+                        "destructionMethod": "$WIPE_LABEL",
+                        "completedAt": "$COMPLETED_AT",
+                        "driveInfo": $DRIVE_JSON
+                    }
+                    EOF
+
+          echo "Wipe completed. Sending completion callback..."
+                    curl -sS -X POST "$CALLBACK_URI" \
+                        -H "Content-Type: application/json" \
+                        --data-binary "@$PAYLOAD_FILE"
+          callback_exit=$?
+
+          if [ $callback_exit -eq 0 ]; then
+              CALLBACK_STATUS="sent"
+              echo "Callback sent successfully."
+          else
+              echo "Warning: Callback failed with exit code $callback_exit"
+          fi
+
+          echo "HDD wipe completed successfully."
+          write_state "finished" "Wipe completed" "$CALLBACK_STATUS"
+          exit 0
+
+    - name: Set permissions on parent directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - "/var/www"
+        - "/var/www/html"
+        - "/var/www/html/fog"
+
+    - name: Remove old Apache configuration block for HDD wipe tool
+      ansible.builtin.blockinfile:
+        path: "{{ apache_config_file }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK FOR FOG HDD WIPE TOOL"
+        state: absent
+
+    - name: Add Apache directory configuration for HDD wipe tool
+      ansible.builtin.blockinfile:
+        path: "{{ apache_config_file }}"
+        marker: "    # {mark} ANSIBLE MANAGED BLOCK FOR FOG HDD WIPE TOOL"
+        insertbefore: "</VirtualHost>"
+        block: |
+          Alias /fog/hddwipe {{ app_dir }}
+          <Directory {{ app_dir }}>
+              Options FollowSymLinks
+              DirectoryIndex index.html
+              Require all granted
+          </Directory>
+      notify: Restart Apache
+
+    - name: Configure sudoers rules for www-data HDD wipe tool
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/91-www-data-fog-hdd-wipe
+        content: |
+          www-data ALL=(ALL) NOPASSWD: {{ app_dir }}/run_hdd_wipe.sh
+          www-data ALL=(ALL) NOPASSWD: /usr/bin/lsblk
+        validate: /usr/sbin/visudo -cf %s
+        mode: '0440'
+
+  handlers:
+    - name: Restart Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted

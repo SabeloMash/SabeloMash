@@ -1,0 +1,1043 @@
+- name: Deploy FOG USB Reload Web Tool
+  hosts: all
+  become: yes
+  vars:
+    app_dir: "/var/www/html/fog/usb"
+    apache_config_file: "/etc/apache2/sites-available/001-fog.conf"
+
+  tasks:
+    - name: Get current machine IP address
+      set_fact:
+        my_ip: "{{ ansible_default_ipv4.address }}"
+
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+
+    - name: Deploy index.html
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/index.html"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>CC Tech FOG USB Reload</title>
+              <link rel="stylesheet" href="style.css">
+          </head>
+          <body>
+              <div class="page-bg"></div>
+              <main class="container">
+                  <header class="header">
+                      <h1>CC Tech FOG USB Reload</h1>
+                      <p>Create bootable USB drives for FOG provisioning.</p>
+                  </header>
+
+                  <section class="drive-summary">
+                      <h2>USB Status</h2>
+                      <p id="drive-message" class="drive-message">Detecting attached USB devices...</p>
+                      <div style="margin: .6rem 0;">
+                          <strong>USB Status:</strong>
+                          <span id="usb-status" class="status-badge idle">Not Detected</span>
+                      </div>
+                  </section>
+
+                  <section class="drive-list card-panel">
+                      <h2>Detected Removable Drives</h2>
+                      <p class="sub"><span id="detected-count">0 removable drive(s) detected.</span> Ready to format.</p>
+                      <div id="usb-devices" class="device-cards">Detecting attached USB devices...</div>
+                  </section>
+
+                  <section class="actions button-panel">
+                      <button id="select-usb-btn" class="action-btn secondary" disabled>Select USB</button>
+                      <button id="deselect-usb-btn" class="action-btn secondary" disabled>Deselect USB</button>
+                      <button id="run-script-btn" class="action-btn full-width" disabled>Reload Selected USB Drive(s)</button>
+                  </section>
+
+                  <section class="process">
+                      <div class="status-row">
+                          <span class="status-label">Process Status</span>
+                          <span id="process-status" class="status-badge idle">Idle</span>
+                      </div>
+                      <pre id="output-log">No output yet...</pre>
+                  </section>
+
+                  <footer class="footer">
+                      <a class="usb-link" href="/fog/cctech/index.html">Back to Download Center Web App</a>
+                  </footer>
+
+              </main>
+              <script src="app.js"></script>
+          </body>
+          </html>
+
+    - name: Deploy style.css
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/style.css"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          :root {
+              --bg-1: #fbc241;
+              --bg-2: #ffe38e;
+              --card: #1f2226;
+              --panel: #2a2e33;
+              --text: #f4f4f4;
+              --muted: #c9c9c9;
+              --ok: #1f9d55;
+              --warn: #d18b00;
+              --bad: #d93025;
+              --action: #1877f2;
+              --action-hover: #0f62cf;
+          }
+
+          * {
+              box-sizing: border-box;
+          }
+
+          body {
+              margin: 0;
+              min-height: 100vh;
+              font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+              color: var(--text);
+              background: linear-gradient(150deg, var(--bg-1) 0%, var(--bg-2) 100%);
+              padding: 1.25rem;
+          }
+
+          .page-bg {
+              position: fixed;
+              inset: 0;
+              pointer-events: none;
+              background: radial-gradient(circle at 8% 10%, rgba(255, 255, 255, 0.24), transparent 34%);
+          }
+
+          .container {
+              position: relative;
+              z-index: 1;
+              max-width: 980px;
+              margin: 0 auto;
+              background: rgba(31, 34, 38, 0.95);
+              border-radius: 14px;
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+              padding: 1.25rem;
+          }
+
+          .header h1 {
+              margin: 0;
+              color: #fbc241;
+              font-size: 2rem;
+          }
+
+          .footer {
+              margin-top: 1.5rem;
+              text-align: center;
+          }
+
+          .usb-link {
+              display: inline-block;
+              text-decoration: none;
+              background: var(--bg-1);
+              color: #1f2226;
+              font-weight: 700;
+              padding: 0.75rem 1.8rem;
+              border-radius: 8px;
+              border: none;
+              font-size: 1.05rem;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              box-shadow: 0 4px 12px rgba(251, 194, 65, 0.3);
+              border: 1px solid rgba(251, 194, 65, 0.8);
+          }
+
+          .usb-link:hover {
+              background: #ffd158;
+              transform: translateY(-2px);
+              box-shadow: 0 6px 16px rgba(251, 194, 65, 0.4);
+          }
+
+          .usb-link:active {
+              transform: translateY(0px);
+              box-shadow: 0 2px 8px rgba(251, 194, 65, 0.3);
+          }
+
+          .header p {
+              margin: 0.4rem 0 1.1rem;
+              color: var(--muted);
+          }
+
+          .drive-summary,
+          .drive-list,
+          .process {
+              background: var(--panel);
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 12px;
+              padding: 1rem;
+              margin-bottom: 1rem;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+          }
+
+          .drive-summary h2,
+          .drive-list h2 {
+              margin: 0 0 0.85rem;
+              font-size: 1.15rem;
+          }
+
+          .status-row {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              margin-bottom: 0.8rem;
+          }
+
+          .status-label {
+              font-weight: 700;
+          }
+
+          .status-badge {
+              border-radius: 999px;
+              padding: 0.3rem 0.7rem;
+              border: 1px solid transparent;
+              font-weight: 700;
+              font-size: 0.86rem;
+          }
+
+          .status-badge.idle {
+              background: rgba(170, 170, 170, 0.14);
+              border-color: rgba(170, 170, 170, 0.45);
+          }
+
+          .status-badge.running {
+              background: rgba(24, 119, 242, 0.18);
+              border-color: rgba(24, 119, 242, 0.6);
+              color: #bfdaff;
+          }
+
+          .status-badge.finished {
+              background: rgba(31, 157, 85, 0.18);
+              border-color: rgba(31, 157, 85, 0.6);
+              color: #9ef5c1;
+          }
+
+          .status-badge.error {
+              background: rgba(217, 48, 37, 0.18);
+              border-color: rgba(217, 48, 37, 0.6);
+              color: #ffb2aa;
+          }
+
+          #output-log {
+              margin: 0;
+              background: #13161a;
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              border-radius: 8px;
+              min-height: 120px;
+              max-height: 320px;
+              overflow: auto;
+              padding: 0.8rem;
+              font-size: 0.83rem;
+              line-height: 1.35;
+              color: #ebebeb;
+              white-space: pre-wrap;
+              word-break: break-word;
+          }
+
+          .actions {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 0.9rem;
+              margin-bottom: 1.5rem;
+          }
+
+          .button-panel {
+              padding: 1rem;
+              gap: 1rem;
+              align-items: center;
+              background: var(--panel);
+              border: 1px solid rgba(255, 255, 255, 0.08);
+              border-radius: 12px;
+              margin-bottom: 1rem;
+          }
+
+          .action-btn {
+              min-height: 3.6rem;
+              border: none;
+              border-radius: 10px;
+              background: var(--action);
+              color: #fff;
+              font-size: 1rem;
+              font-weight: 700;
+              padding: 0.9rem;
+              cursor: pointer;
+              transition: background-color 0.2s ease;
+          }
+
+          .action-btn:hover:not(:disabled) {
+              background: var(--action-hover);
+          }
+
+          .action-btn.secondary {
+              background: #4a5568;
+          }
+
+          .action-btn.secondary:hover:not(:disabled) {
+              background: #5a6578;
+          }
+
+          .action-btn.full-width {
+              grid-column: 1 / -1;
+              justify-self: stretch;
+          }
+
+          .action-btn:disabled {
+              background: #666;
+              cursor: not-allowed;
+          }
+
+          @media (max-width: 760px) {
+              .actions {
+                  grid-template-columns: 1fr;
+              }
+          }
+
+          /* Device card grid */
+          .device-cards {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+              gap: 1rem;
+              margin-top: 0.6rem;
+          }
+
+          .drive-list .sub {
+              margin-top: 0;
+              margin-bottom: 1rem;
+              color: var(--muted);
+          }
+
+          .device-card {
+              background: linear-gradient(180deg, rgba(22,24,27,0.96), rgba(28,30,33,0.96));
+              border: 2px solid rgba(255,255,255,0.07);
+              border-radius: 12px;
+              padding: 1rem;
+              display: flex;
+              flex-direction: column;
+              gap: 0.6rem;
+              min-height: 140px;
+              box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+              cursor: pointer;
+              transition: all 0.2s ease;
+          }
+
+          .device-card:hover {
+              border-color: rgba(251, 194, 65, 0.5);
+              background: linear-gradient(180deg, rgba(32,34,37,0.96), rgba(38,40,43,0.96));
+          }
+
+          .device-card.selected {
+              border-color: #fbc241;
+              background: linear-gradient(180deg, rgba(251, 194, 65, 0.15), rgba(251, 194, 65, 0.05));
+          }
+
+          .device-card .card-top {
+              display: flex;
+              align-items: center;
+              gap: 0.8rem;
+          }
+
+          .device-card input[type="checkbox"] {
+              appearance: none;
+              -webkit-appearance: none;
+              width: 20px;
+              height: 20px;
+              border-radius: 6px;
+              border: 2px solid rgba(255,255,255,0.18);
+              background: rgba(255,255,255,0.02);
+              display: inline-block;
+              vertical-align: middle;
+              position: relative;
+              cursor: pointer;
+          }
+
+          .device-card input[type="checkbox"]:checked {
+              background: #ffffff;
+              border-color: rgba(255,255,255,0.9);
+          }
+
+          .device-card .device-path {
+              font-weight: 800;
+              font-size: 1.02rem;
+              color: var(--text);
+          }
+
+          .device-card .card-body {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 0.25rem 1rem;
+              color: var(--muted);
+              font-size: 0.9rem;
+              align-items: start;
+          }
+
+          .device-card .field-label {
+              color: var(--muted);
+              font-size: 0.78rem;
+          }
+
+          .device-card .field-value {
+              color: var(--text);
+              font-weight: 800;
+              margin-bottom: 0.25rem;
+          }
+
+          .device-card .col {
+              display: flex;
+              flex-direction: column;
+              gap: 0.4rem;
+          }
+
+          .selection-controls {
+              display: flex;
+              flex-wrap: wrap;
+              align-items: center;
+              gap: 1rem;
+              margin-top: 0.75rem;
+          }
+
+          .selection-buttons {
+              display: flex;
+              gap: 0.65rem;
+              flex-wrap: wrap;
+          }
+
+          .small-btn {
+              border: none;
+              border-radius: 10px;
+              background: #4a5568;
+              color: #fff;
+              padding: 0.9rem 1.2rem;
+              font-size: 1rem;
+              font-weight: 700;
+              cursor: pointer;
+              transition: background-color 0.2s ease;
+          }
+
+          .small-btn:hover:not(:disabled) {
+              background: #5a6578;
+          }
+
+          .small-btn:disabled {
+              background: #666;
+              cursor: not-allowed;
+          }
+
+          .sub { color: var(--muted); margin: 0.25rem 0 0.5rem; }
+
+    - name: Deploy app.js
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/app.js"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          document.addEventListener('DOMContentLoaded', () => {
+              const usbStatusSpan = document.getElementById('usb-status');
+              const devicesContainer = document.getElementById('usb-devices');
+              const runScriptBtn = document.getElementById('run-script-btn');
+              const processStatusSpan = document.getElementById('process-status');
+              const outputLog = document.getElementById('output-log');
+              const selectUsbBtn = document.getElementById('select-usb-btn');
+              const deselectUsbBtn = document.getElementById('deselect-usb-btn');
+
+              let statusInterval;
+              let currentDevices = [];
+              let selectedDeviceSet = new Set();
+
+              function getDeviceKey(device) {
+                  if (!device) {
+                      return '';
+                  }
+                  return device.serial && device.serial !== 'Unknown' ? device.serial : device.path;
+              }
+
+              function buildDeviceList(devices) {
+                  const previouslySelected = new Set(Array.from(selectedDeviceSet).map(key => key));
+                  const detectedCount = document.getElementById('detected-count');
+                  if (!devices || devices.length === 0) {
+                      currentDevices = [];
+                      devicesContainer.innerHTML = '<div class="no-dev">No removable USB devices detected.</div>';
+                      selectUsbBtn.disabled = true;
+                      deselectUsbBtn.disabled = true;
+                      detectedCount.textContent = '0 removable drive(s) detected.';
+                      updateRunButtonState();
+                      return;
+                  }
+
+                  currentDevices = devices;
+                  devicesContainer.innerHTML = '';
+
+                  detectedCount.textContent = `${devices.length} removable drive(s) detected.`;
+
+                  devices.forEach((device, index) => {
+                      const card = document.createElement('div');
+                      card.className = 'device-card';
+
+                      const top = document.createElement('div');
+                      top.className = 'card-top';
+
+                      const checkbox = document.createElement('input');
+                      checkbox.type = 'checkbox';
+                      checkbox.id = `usb-device-${index}`;
+                      checkbox.dataset.device = device.path;
+                      checkbox.dataset.index = index;
+
+                      const shouldRestoreSelection = previouslySelected.has(getDeviceKey(device));
+                      checkbox.checked = shouldRestoreSelection;
+                      if (shouldRestoreSelection) {
+                          card.classList.add('selected');
+                      }
+
+                      checkbox.addEventListener('change', () => {
+                          updateSelectedDevices();
+                          if (checkbox.checked) {
+                              card.classList.add('selected');
+                          } else {
+                              card.classList.remove('selected');
+                          }
+                      });
+
+                      card.addEventListener('click', (e) => {
+                          if (e.target !== checkbox) {
+                              checkbox.checked = !checkbox.checked;
+                              checkbox.dispatchEvent(new Event('change'));
+                          }
+                      });
+
+                      const pathSpan = document.createElement('div');
+                      pathSpan.className = 'device-path';
+                      pathSpan.textContent = device.path;
+
+                      top.appendChild(checkbox);
+                      top.appendChild(pathSpan);
+
+                      const body = document.createElement('div');
+                      body.className = 'card-body';
+
+                      const sizeLabel = document.createElement('div');
+                      sizeLabel.className = 'field-label';
+                      sizeLabel.textContent = 'Size';
+                      const sizeVal = document.createElement('div');
+                      sizeVal.className = 'field-value';
+                      sizeVal.textContent = device.size || '';
+
+                      const vendorLabel = document.createElement('div');
+                      vendorLabel.className = 'field-label';
+                      vendorLabel.textContent = 'Vendor';
+                      const vendorVal = document.createElement('div');
+                      vendorVal.className = 'field-value';
+                      vendorVal.textContent = device.vendor || '';
+
+                      const modelLabel = document.createElement('div');
+                      modelLabel.className = 'field-label';
+                      modelLabel.textContent = 'Model';
+                      const modelVal = document.createElement('div');
+                      modelVal.className = 'field-value';
+                      modelVal.textContent = device.model || '';
+
+                      const serialLabel = document.createElement('div');
+                      serialLabel.className = 'field-label';
+                      serialLabel.textContent = 'Serial';
+                      const serialVal = document.createElement('div');
+                      serialVal.className = 'field-value';
+                      serialVal.textContent = device.serial || '';
+
+                      body.appendChild(sizeLabel);
+                      body.appendChild(vendorLabel);
+                      body.appendChild(sizeVal);
+                      body.appendChild(vendorVal);
+
+                      body.appendChild(modelLabel);
+                      body.appendChild(serialLabel);
+                      body.appendChild(modelVal);
+                      body.appendChild(serialVal);
+
+                      card.appendChild(top);
+                      card.appendChild(body);
+                      devicesContainer.appendChild(card);
+                  });
+
+                  selectUsbBtn.disabled = false;
+                  deselectUsbBtn.disabled = false;
+
+                  updateSelectedDevices();
+              }
+
+              function updateSelectedDevices() {
+                  const checkboxes = devicesContainer.querySelectorAll('input[type="checkbox"]');
+                  const currentSelected = new Set();
+
+                  checkboxes.forEach(cb => {
+                      const idx = parseInt(cb.dataset.index);
+                      const device = currentDevices[idx];
+                      if (device && cb.checked) {
+                          currentSelected.add(getDeviceKey(device));
+                      }
+                  });
+
+                  selectedDeviceSet = currentSelected;
+                  updateRunButtonState();
+              }
+
+              function getSelectedDevices() {
+                  const checkboxes = devicesContainer.querySelectorAll('input[type="checkbox"]');
+                  return Array.from(checkboxes)
+                      .filter((checkbox) => checkbox.checked)
+                      .map((checkbox) => checkbox.dataset.device);
+              }
+
+              function updateRunButtonState() {
+                  const selected = getSelectedDevices();
+                  runScriptBtn.disabled = selected.length === 0;
+                  selectUsbBtn.disabled = currentDevices.length === 0;
+                  deselectUsbBtn.disabled = currentDevices.length === 0;
+              }
+
+              function setAllCheckboxes(checked) {
+                  const checkboxes = devicesContainer.querySelectorAll('input[type="checkbox"]');
+                  checkboxes.forEach((cb) => cb.checked = checked);
+                  updateRunButtonState();
+              }
+
+              async function checkUsbStatus() {
+                  try {
+                      const response = await fetch('api.php?action=check_usb');
+                      const data = await response.json();
+
+                      usbStatusSpan.textContent = data.message || 'Detecting attached USB devices...';
+                      usbStatusSpan.className = 'status-badge ' + (data.safe_to_run ? 'finished' : 'error');
+
+                      buildDeviceList(data.devices || []);
+                      runScriptBtn.disabled = !(data.safe_to_run && getSelectedDevices().length > 0);
+
+                          if (!data.usb_detected && data.debug) {
+                              outputLog.textContent = 'USB detection debug:\n' + data.debug;
+                          }
+                  } catch (error) {
+                          console.error('Error checking USB status:', error);
+                      usbStatusSpan.textContent = 'Error';
+                      usbStatusSpan.className = 'status-badge error';
+                      devicesContainer.textContent = 'Unable to query USB devices.';
+                      selectUsbBtn.disabled = true;
+                      deselectUsbBtn.disabled = true;
+                      runScriptBtn.disabled = true;
+                  }
+              }
+
+              selectUsbBtn.addEventListener('click', () => {
+                  setAllCheckboxes(true);
+              });
+
+              deselectUsbBtn.addEventListener('click', () => {
+                  setAllCheckboxes(false);
+              });
+
+              async function getStatus() {
+                  try {
+                      const response = await fetch('api.php?action=get_status');
+                      const data = await response.json();
+
+                      outputLog.textContent = data.log || 'No output yet...';
+                      outputLog.scrollTop = outputLog.scrollHeight;
+
+                      processStatusSpan.textContent = data.status;
+                      processStatusSpan.className = 'status-badge ' + (data.status === 'finished' ? 'finished' : data.status === 'running' ? 'running' : 'error');
+
+                      if (data.status !== 'running') {
+                          clearInterval(statusInterval);
+                          runScriptBtn.disabled = false;
+                          selectUsbBtn.disabled = false;
+                          deselectUsbBtn.disabled = false;
+                          checkUsbStatus();
+                      }
+                  } catch (error) {
+                      console.error('Error getting status:', error);
+                      processStatusSpan.textContent = 'Error';
+                      processStatusSpan.className = 'status-badge error';
+                      clearInterval(statusInterval);
+                  }
+              }
+
+              runScriptBtn.addEventListener('click', async () => {
+                  const selectedDevices = getSelectedDevices();
+                  if (selectedDevices.length === 0) {
+                      return;
+                  }
+
+                  runScriptBtn.disabled = true;
+                  selectUsbBtn.disabled = true;
+                  deselectUsbBtn.disabled = true;
+                  processStatusSpan.textContent = 'Starting...';
+                  processStatusSpan.className = 'status-badge running';
+                  outputLog.textContent = '';
+
+                  try {
+                      const deviceParam = encodeURIComponent(selectedDevices.join(','));
+                      const response = await fetch(`api.php?action=run_script&devices=${deviceParam}`);
+                      const data = await response.json();
+                      if (data.status === 'started') {
+                          statusInterval = setInterval(getStatus, 2000);
+                      } else {
+                          processStatusSpan.textContent = 'Error starting';
+                          processStatusSpan.className = 'status-badge error';
+                          outputLog.textContent = data.message || 'Unknown error.';
+                          runScriptBtn.disabled = false;
+                          selectUsbBtn.disabled = false;
+                          deselectUsbBtn.disabled = false;
+                      }
+                  } catch (error) {
+                      console.error('Error running script:', error);
+                      processStatusSpan.textContent = 'Error';
+                      processStatusSpan.className = 'status-badge error';
+                      runScriptBtn.disabled = false;
+                      selectUsbBtn.disabled = false;
+                      deselectUsbBtn.disabled = false;
+                  }
+              });
+
+              checkUsbStatus();
+              setInterval(checkUsbStatus, 5000);
+          });
+
+    - name: Deploy api.php
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/api.php"
+        owner: www-data
+        group: www-data
+        mode: '0644'
+        content: |
+          <?php
+          header('Content-Type: application/json');
+
+          $action = $_GET['action'] ?? '';
+          $log_file = '/tmp/fos-usb-log.txt';
+          $pid_file = '/tmp/fos-usb-script.pid';
+
+          function is_process_running($pid) {
+              if (empty($pid)) return false;
+              return file_exists("/proc/$pid");
+          }
+
+          function parse_lsblk_output($line) {
+              $device = [];
+              preg_match_all('/(\\w+)="([^"]*)"/', $line, $matches, PREG_SET_ORDER);
+              foreach ($matches as $match) {
+                  $device[$match[1]] = $match[2];
+              }
+              return $device;
+          }
+
+          function get_usb_disks() {
+              $output = shell_exec('lsblk -d -P -o NAME,SIZE,MODEL,VENDOR,SERIAL,TRAN,TYPE,RM 2>/dev/null');
+              $devices = [];
+
+              if ($output === null || trim($output) === '') {
+                  return $devices;
+              }
+
+              foreach (explode("\n", trim($output)) as $line) {
+                  if (trim($line) === '') {
+                      continue;
+                  }
+                  $device = parse_lsblk_output($line);
+                  if (($device['TYPE'] ?? '') !== 'disk') {
+                      continue;
+                  }
+                  $rm = isset($device['RM']) ? (int)$device['RM'] : 0;
+                  $tran = strtolower(trim($device['TRAN'] ?? ''));
+                  if ($rm !== 1) {
+                      continue;
+                  }
+                  if ($tran !== 'usb' && $tran !== '') {
+                      continue;
+                  }
+                  $devices[] = [
+                      'path' => '/dev/' . ($device['NAME'] ?? ''),
+                      'size' => $device['SIZE'] ?? '',
+                      'vendor' => $device['VENDOR'] ?? '',
+                      'model' => $device['MODEL'] ?? '',
+                      'serial' => $device['SERIAL'] ?? ''
+                  ];
+              }
+
+              return $devices;
+          }
+
+          switch ($action) {
+              case 'check_usb':
+                  $devices = get_usb_disks();
+                  if (empty($devices)) {
+                      $raw_output = shell_exec('lsblk -d -P -o NAME,SIZE,MODEL,VENDOR,SERIAL,TRAN,TYPE,RM 2>/dev/null');
+                      echo json_encode(['usb_detected' => false, 'safe_to_run' => false, 'message' => 'No USB drive detected.', 'devices' => [], 'debug' => trim($raw_output)]);
+                      break;
+                  }
+
+                  $labels_output = shell_exec('lsblk -o LABEL 2>/dev/null');
+                  if (strpos($labels_output, 'PC_DOCTOR') !== false) {
+                      echo json_encode([
+                          'usb_detected' => true,
+                          'safe_to_run' => false,
+                          'message' => 'PC_DOCTOR drive detected. Operation disabled for safety.',
+                          'devices' => $devices
+                      ]);
+                  } else {
+                      echo json_encode([
+                          'usb_detected' => true,
+                          'safe_to_run' => true,
+                          'message' => 'USB drive detected. Ready to run.',
+                          'devices' => $devices
+                      ]);
+                  }
+                  break;
+
+              case 'run_script':
+                  if (is_process_running(trim(@file_get_contents($pid_file)))) {
+                      echo json_encode(['status' => 'error', 'message' => 'Script is already running.']);
+                      exit;
+                  }
+
+                  $device_list = $_GET['devices'] ?? '';
+                  $device_arg = '';
+                  if (!empty($device_list)) {
+                      $allowed = [];
+                      $devices = explode(',', $device_list);
+                      foreach ($devices as $device) {
+                          $device = trim($device);
+                          if ($device === '') {
+                              continue;
+                          }
+                          if (preg_match('#^/dev/[a-zA-Z0-9]+$#', $device)) {
+                              $allowed[] = $device;
+                          }
+                      }
+                      if (!empty($allowed)) {
+                          $device_arg = ' ' . escapeshellarg(implode(',', $allowed));
+                      }
+                  }
+
+                  file_put_contents($log_file, "");
+                  $command = 'sudo ' . __DIR__ . '/run_usb_script.sh' . $device_arg;
+                  $process_command = sprintf('%s > %s 2>&1 & echo $!', $command, $log_file);
+                  $pid = shell_exec($process_command);
+                  file_put_contents($pid_file, $pid);
+                  echo json_encode(['status' => 'started', 'pid' => trim($pid)]);
+                  break;
+
+              case 'get_status':
+                  $pid = trim(@file_get_contents($pid_file));
+                  $log_content = file_exists($log_file) ? file_get_contents($log_file) : 'Log file not found.';
+
+                  if (is_process_running($pid)) {
+                      $status = 'running';
+                  } else {
+                      if (strpos($log_content, 'All removable USB drives have been processed.') !== false) {
+                          $status = 'finished';
+                      } else {
+                          $status = 'error';
+                      }
+                  }
+
+                  echo json_encode(['status' => $status, 'log' => $log_content]);
+                  break;
+
+              default:
+                  echo json_encode(['error' => 'Invalid action']);
+                  break;
+          }
+
+    - name: Deploy run_usb_script.sh
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/run_usb_script.sh"
+        owner: www-data
+        group: www-data
+        mode: '0755'
+        content: |
+          #!/bin/bash
+
+          echo "Starting FOS USB creation process..."
+
+          echo "Installing dependencies..."
+          sudo apt-get update
+          sudo apt-get install -y grub-efi-amd64 grub-efi-ia32 parted kpartx
+
+          echo "Checking for protected drive labels..."
+          all_labels=$(sudo /usr/bin/lsblk -o LABEL)
+          if echo "$all_labels" | grep -q "PC_DOCTOR"; then
+            echo "Error: A drive with the label PC_DOCTOR.vfat was detected." >&2
+            echo "For safety, the script will now exit without making any changes." >&2
+            exit 1
+          fi
+
+          if [ -n "$1" ]; then
+            IFS=',' read -r -a selected_devices <<< "$1"
+            usb_devices=""
+            for device in "${selected_devices[@]}"; do
+              if [ -b "$device" ]; then
+                usb_devices+="$device "
+              else
+                echo "Warning: selected device $device does not exist or is not a block device." >&2
+              fi
+            done
+            usb_devices=$(echo "$usb_devices" | xargs)
+          else
+            usb_devices=$(sudo /usr/bin/lsblk -d -o NAME,RM,TYPE,TRAN | awk '$2==1 && $3=="disk" && $4=="usb" {print "/dev/"$1}')
+          fi
+
+          if [ -z "$usb_devices" ]; then
+            echo "Error: No removable USB devices found." >&2
+            exit 1
+          fi
+
+          echo "Found USB devices: $usb_devices"
+
+          if [ -f /tmp/fos-usb.img ]; then
+              echo "Removing old disk image..."
+              rm -f /tmp/fos-usb.img
+          fi
+
+          echo "Creating a blank 128MB disk image..."
+          dd if=/dev/zero of=/tmp/fos-usb.img bs=1M count=128
+
+          echo "Creating partition table and partition..."
+          sudo parted --script /tmp/fos-usb.img mklabel msdos mkpart p fat32 1 128 set 1 boot on
+
+          echo "Mapping partitions from the image file..."
+          sudo kpartx -a -s /tmp/fos-usb.img
+          LOOPDEV=$(losetup -a | grep "/tmp/fos-usb.img" | grep -o "loop[0-9]*")
+
+          if [ -z "$LOOPDEV" ]; then
+              echo "Error: Could not find loop device." >&2
+              exit 1
+          fi
+
+          echo "Creating FAT32 filesystem..."
+          sudo mkfs -t vfat -n GRUB /dev/mapper/${LOOPDEV}p1
+
+          echo "Mounting filesystem..."
+          sudo mkdir -p /mnt/fos_usb
+          sudo mount /dev/mapper/${LOOPDEV}p1 /mnt/fos_usb
+
+          echo "Installing GRUB bootloader..."
+          sudo grub-install --removable --no-nvram --no-uefi-secure-boot --efi-directory=/mnt/fos_usb --boot-directory=/mnt/fos_usb/boot --target=i386-efi
+          sudo grub-install --removable --no-nvram --no-uefi-secure-boot --efi-directory=/mnt/fos_usb --boot-directory=/mnt/fos_usb/boot --target=x86_64-efi
+          sudo grub-install --removable --no-floppy --boot-directory=/mnt/fos_usb/boot --target=i386-pc /dev/${LOOPDEV}
+
+          echo "Copying FOG Project files..."
+          sudo cp /var/www/fog/service/ipxe/init.xz /mnt/fos_usb/boot/
+          sudo cp /var/www/fog/service/ipxe/init_32.xz /mnt/fos_usb/boot/
+          sudo cp /var/www/fog/service/ipxe/bzImage /mnt/fos_usb/boot/
+          sudo cp /var/www/fog/service/ipxe/bzImage32 /mnt/fos_usb/boot/
+
+          wget -P /mnt/fos_usb/boot/ https://raw.githubusercontent.com/FOGProject/fogproject/dev-branch/packages/web/service/ipxe/memdisk
+          wget -P /mnt/fos_usb/boot/ https://raw.githubusercontent.com/FOGProject/fogproject/dev-branch/packages/web/service/ipxe/memtest.bin
+          wget -P /mnt/fos_usb/boot/ https://raw.githubusercontent.com/FOGProject/fogproject/dev-branch/packages/tftp/ipxe.krn
+          wget -P /mnt/fos_usb/boot/ https://raw.githubusercontent.com/FOGProject/fogproject/dev-branch/packages/tftp/ipxe.efi
+
+          echo "Creating GRUB configuration file..."
+          cat > /tmp/grub.cfg << 'EOF'
+          set myfogip={{ my_ip }}
+          set myimage=/boot/bzImage
+          set myinits=/boot/init.xz
+          set myloglevel=4
+          set timeout=-1
+          insmod all_video
+
+          menuentry "1. CC Tech Registration" {
+              linux  $myimage loglevel=$myloglevel initrd=init.xz root=/dev/ram0 rw ramdisk_size=275000 keymap= web=$myfogip/fog/ boottype=usb consoleblank=0 rootfstype=ext4 mode=manreg
+              initrd $myinits
+          }
+
+          menuentry "2. CC Tech Deploy Image" {
+              linux  $myimage loglevel=$myloglevel initrd=init.xz root=/dev/ram0 rw ramdisk_size=275000 keymap= web=$myfogip/fog/ boottype=usb consoleblank=0 rootfstype=ext4
+              initrd $myinits
+          }
+          EOF
+          sudo mv /tmp/grub.cfg /mnt/fos_usb/boot/grub/grub.cfg
+
+          echo "Unmounting filesystem..."
+          sudo umount /mnt/fos_usb
+
+          echo "Unmapping image file..."
+          sudo kpartx -d /tmp/fos-usb.img
+
+          IMAGE_PATH="/tmp/fos-usb.img"
+
+          for device in $usb_devices; do
+            echo "Processing device: $device"
+
+            echo "Unmounting all partitions on $device..."
+            sudo umount ${device}* || echo "Device not mounted or could not unmount."
+
+            echo "Wiping partition table on $device..."
+            sudo wipefs -a $device
+
+            echo "Writing image to $device..."
+            sudo dd bs=4M if=$IMAGE_PATH of=$device status=progress oflag=sync
+
+            if [ $? -eq 0 ]; then
+              echo "Successfully wrote image to $device."
+            else
+              echo "Error: Failed to write image to $device." >&2
+            fi
+
+          done
+
+          echo "All removable USB drives have been processed."
+
+    - name: Set permissions on parent directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
+      loop:
+        - "/var/www/html"
+        - "/var/www/html/fog"
+        - "/var/www/fog"
+
+    - name: Add Apache directory configuration
+      ansible.builtin.blockinfile:
+        path: "{{ apache_config_file }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK FOR FOG USB TOOL"
+        block: |
+          Alias /fog/usb {{ app_dir }}
+          <Directory {{ app_dir }}>
+              Options Indexes FollowSymLinks
+              AllowOverride All
+              Require all granted
+              DirectoryIndex index.html
+              FallbackResource /index.html
+          </Directory>
+      notify: Restart Apache
+
+    - name: Configure sudoers rules for www-data
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/90-www-data-fog-usb
+        content: |
+          www-data ALL=(ALL) NOPASSWD: {{ app_dir }}/run_usb_script.sh
+          www-data ALL=(ALL) NOPASSWD: /usr/bin/lsblk
+        validate: /usr/sbin/visudo -cf %s
+        mode: '0440'
+
+  handlers:
+    - name: Restart Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted
