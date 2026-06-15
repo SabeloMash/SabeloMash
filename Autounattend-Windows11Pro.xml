@@ -137,8 +137,8 @@
 			</SynchronousCommand>
 			<SynchronousCommand wcm:action="add">
 			<Order>2</Order>
-			<CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$dest=[IO.Path]::Combine($env:ProgramData,'Microsoft','Windows','Start Menu','Programs','Startup','CCTECH.bat'); Copy-Item 'D:\CCTECH.bat' -Destination $dest -Force; Start-Process -FilePath $dest -Wait"</CommandLine>
-			<Description>Copy CCTECH.bat to the Startup folder and execute it</Description>
+			<CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$src='D:\CCTECH.bat'; $folder='C:\CCTECH'; $task='CCTECH-Startup-Elevated'; New-Item -ItemType Directory -Path $folder -Force | Out-Null; $bat=Join-Path $folder 'CCTECH.bat'; Copy-Item $src -Destination $bat -Force; $q=[char]34; $action=New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/c '+$q+$bat+$q); $principal=New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Highest; Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Force; $startup=Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Startup'; $wrapper=Join-Path $startup 'CCTECH.bat'; Set-Content -Path $wrapper -Value ('@echo off'+"`r`n"+'schtasks /run /tn '+$task) -Encoding ASCII; Start-ScheduledTask -TaskName $task"</CommandLine>
+			<Description>Install CCTECH.bat and run it elevated from Startup</Description>
 			<RequiresUserInput>false</RequiresUserInput>
 			</SynchronousCommand>
 			</FirstLogonCommands>
