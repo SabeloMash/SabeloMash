@@ -135,6 +135,12 @@
 			<Description>Set IP and Enable WinRM service</Description>
 			<RequiresUserInput>false</RequiresUserInput>
 			</SynchronousCommand>
+			<SynchronousCommand wcm:action="add">
+			<Order>2</Order>
+			<CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "$dest=[IO.Path]::Combine($env:ProgramData,'Microsoft','Windows','Start Menu','Programs','Startup','CCTECH.bat'); Copy-Item 'D:\CCTECH.bat' -Destination $dest -Force; Start-Process -FilePath $dest -Wait"</CommandLine>
+			<Description>Copy CCTECH.bat to the Startup folder and execute it</Description>
+			<RequiresUserInput>false</RequiresUserInput>
+			</SynchronousCommand>
 			</FirstLogonCommands>
 			<UserAccounts>
 			<AdministratorPassword>
