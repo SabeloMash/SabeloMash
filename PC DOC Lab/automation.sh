@@ -127,8 +127,118 @@ log_and_run "timedatectl set-timezone Africa/Johannesburg"
 
 # Ensure LAN or Wi-Fi connection is active and functional before proceeding.
 test_connection() {
-    ping -c 1 8.8.8.8 >/dev/null 2>&1
+    ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1
     return $?
+}
+
+connect_wifi() {
+    local attempt
+
+    echo "Attempting to connect to Wi-Fi SSID: $WIFISSID" | tee -a "$LOGFILE"
+
+    if ! command -v nmcli >/dev/null 2>&1; then
+        echo "nmcli is not available on this USB image." | tee -a "$LOGFILE"
+        return 1
+    fi
+
+    echo "=== Wi-Fi Diagnostic Information ===" | tee -a "$LOGFILE"
+    echo "Wi-Fi radio status:" | tee -a "$LOGFILE"
+    nmcli radio all | tee -a "$LOGFILE" || true
+    echo "Wireless device status:" | tee -a "$LOGFILE"
+    nmcli -f DEVICE,STATE,CONNECTION dev status | tee -a "$LOGFILE" || true
+    echo "Available Wi-Fi networks:" | tee -a "$LOGFILE"
+    nmcli device wifi list | tee -a "$LOGFILE" || true
+
+    if command -v rfkill >/dev/null 2>&1; then
+        echo "rfkill status:" | tee -a "$LOGFILE"
+        rfkill list | tee -a "$LOGFILE" || true
+    fi
+
+    nmcli networking on >/dev/null 2>&1 || true
+    nmcli radio wifi on >/dev/null 2>&1 || true
+
+    # Auto-detect wireless interface name (could be wlan0, wlp2s0, etc.)
+    WIRELESS_IFACE=$(nmcli -t -f DEVICE,TYPE dev status 2>/dev/null | grep '^w.*:wifi$' | head -1 | cut -d: -f1)
+    if [ -z "$WIRELESS_IFACE" ]; then
+        WIRELESS_IFACE="wlan0"
+        echo "Warning: Could not auto-detect wireless interface, defaulting to $WIRELESS_IFACE" | tee -a "$LOGFILE"
+    fi
+    echo "Detected wireless interface: $WIRELESS_IFACE" | tee -a "$LOGFILE"
+
+    for attempt in 1 2 3 4; do
+        echo "Wi-Fi connect attempt $attempt/4..." | tee -a "$LOGFILE"
+
+        # Delete any existing profile for this SSID to force a fresh connection
+        nmcli connection delete "$WIFISSID" >/dev/null 2>&1 || true
+
+        # Create a new connection profile with the SSID and password
+        echo "Creating connection profile for $WIFISSID..." | tee -a "$LOGFILE"
+        nmcli device wifi connect "$WIFISSID" password "$WIFIPASSWD" ifname "$WIRELESS_IFACE" 2>&1 | tee -a "$LOGFILE"
+        local connect_result=$?
+
+        if [ $connect_result -ne 0 ]; then
+            echo "nmcli connect command failed with exit code: $connect_result" | tee -a "$LOGFILE"
+        fi
+
+        # Wait for the device to finish connecting - poll the state
+        echo "Waiting for connection to establish (up to 45 seconds)..." | tee -a "$LOGFILE"
+        local wait_count=0
+        local max_wait=45
+        while [ $wait_count -lt $max_wait ]; do
+            sleep 3
+            wait_count=$((wait_count + 3))
+
+            # Check the device state
+            local dev_state
+            dev_state=$(nmcli -t -f DEVICE,STATE dev status 2>/dev/null | grep "^${WIRELESS_IFACE}:" | cut -d: -f2)
+            echo "  [${wait_count}s] Device state: $dev_state" | tee -a "$LOGFILE"
+
+            if [ "$dev_state" = "connected" ]; then
+                echo "Device is connected after ${wait_count}s!" | tee -a "$LOGFILE"
+                break
+            elif [ "$dev_state" = "failed" ] || [ "$dev_state" = "unavailable" ]; then
+                echo "Device state is '$dev_state' - connection failed." | tee -a "$LOGFILE"
+                break
+            fi
+        done
+
+        # Check if we have an IP address
+        local ip_addr
+        ip_addr=$(ip -4 addr show "$WIRELESS_IFACE" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
+        if [ -n "$ip_addr" ]; then
+            echo "Got IP address: $ip_addr" | tee -a "$LOGFILE"
+        else
+            echo "No IP address assigned yet." | tee -a "$LOGFILE"
+            # Try to explicitly trigger DHCP
+            echo "Attempting to trigger DHCP..." | tee -a "$LOGFILE"
+            dhclient -v "$WIRELESS_IFACE" 2>&1 | tee -a "$LOGFILE" || true
+            sleep 5
+            ip_addr=$(ip -4 addr show "$WIRELESS_IFACE" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
+            if [ -n "$ip_addr" ]; then
+                echo "Got IP address after dhclient: $ip_addr" | tee -a "$LOGFILE"
+            else
+                echo "Still no IP address after dhclient." | tee -a "$LOGFILE"
+            fi
+        fi
+
+        # Test actual connectivity
+        if test_connection; then
+            echo "Wi-Fi connection is functional after ${wait_count}s." | tee -a "$LOGFILE"
+            return 0
+        fi
+
+        echo "Wi-Fi attempt $attempt failed connectivity test. Retrying..." | tee -a "$LOGFILE"
+        echo "Connection detail after failure:" | tee -a "$LOGFILE"
+        nmcli -t -f DEVICE,STATE,CONNECTION dev status | tee -a "$LOGFILE" || true
+        nmcli -t -f ACTIVE,SSID,DEVICE dev wifi | tee -a "$LOGFILE" || true
+    done
+
+    echo "=== Wi-Fi Final Diagnostic State ===" | tee -a "$LOGFILE"
+    nmcli -f DEVICE,STATE,CONNECTION dev status | tee -a "$LOGFILE" || true
+    nmcli -f ACTIVE,SSID,DEVICE dev wifi | tee -a "$LOGFILE" || true
+    ip -4 addr show "$WIRELESS_IFACE" 2>/dev/null | tee -a "$LOGFILE" || true
+    nmcli -t -f IP4.ADDRESS dev show "$WIRELESS_IFACE" 2>/dev/null | tee -a "$LOGFILE" || true
+    return 1
 }
 
 # Initialize a flag to track network connection status
@@ -149,17 +259,12 @@ fi
 
 # If LAN test failed or LAN is not available, try Wi-Fi
 if ! $network_connected; then
-    echo "LAN connection failed or not available. Attempting to connect to CCTECH Wi-Fi..." | tee -a "$LOGFILE"
-    nmcli device wifi list >/dev/null 2>&1
-    sleep 1
-    nmcli device wifi connect "$WIFISSID" password "$WIFIPASSWD"
-    tput cuu 1 && tput el
-
-    if test_connection; then
-        echo "CCTECH Wi-Fi connection has been activated and is functional." | tee -a "$LOGFILE"
+    echo "LAN connection failed or not available. Attempting to connect to $WIFISSID..." | tee -a "$LOGFILE"
+    if connect_wifi; then
+        echo "Wi-Fi connection has been activated and is functional." | tee -a "$LOGFILE"
         network_connected=true
     else
-        echo "Failed to connect to CCTECH Wi-Fi or cannot reach 8.8.8.8." | tee -a "$LOGFILE"
+        echo "Failed to connect to $WIFISSID or cannot reach 8.8.8.8." | tee -a "$LOGFILE"
     fi
 fi
 
