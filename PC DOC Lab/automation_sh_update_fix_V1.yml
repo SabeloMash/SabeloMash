@@ -512,7 +512,8 @@
         method: POST
         headers:
           Content-Type: "application/json"
-        body: '{"text":"PCD USB Update to {{ script_version.stdout|default(\"unknown\") }} (USB: {{ usb_version|default(\"unknown\") }}) done successfully for {{ pcdstorename }}"}'
+        body:
+          text: "PCD USB Update to {{ script_version.stdout|default('unknown') }} (USB: {{ usb_version|default('unknown') }}) done successfully for {{ pcdstorename }}"
         body_format: json
         return_content: true
         status_code: 202
