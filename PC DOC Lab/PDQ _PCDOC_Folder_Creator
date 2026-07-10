@@ -1,0 +1,121 @@
+# Define paths and variables
+$csvPath = "C:\Techshare\store_variables.csv"
+$giteaUrl = "http://git.truenorth.co.za:10880"
+$apiKey = "redacted"
+$owner = "CCTECH"
+$pcdReportsPath = "C:\TechShare\pcdreports"
+
+# Get the current hostname
+$hostname = $env:COMPUTERNAME
+
+# Debugging: Print the hostname
+Write-Host "Hostname: $hostname"
+
+# Ensure case-insensitive comparison by converting both hostname and term_naming_conv to lowercase
+$csvData = Import-Csv -Path $csvPath
+$matchedStore = $csvData | Where-Object {
+    $hostnameLower = $hostname.ToLower()
+    $termNamingConvLower = $_.term_naming_conv.ToLower()
+
+    # Check if term_naming_conv is not empty before matching
+    if (-not [string]::IsNullOrEmpty($termNamingConvLower)) {
+        # Debugging: Print the comparison values
+        Write-Host "Checking if '$hostnameLower' starts with '$termNamingConvLower'"
+
+        # Match the term_naming_conv as a prefix of the hostname
+        $hostnameLower -like "$termNamingConvLower*"
+    } else {
+        # Debugging: Skip empty term_naming_conv
+        Write-Host "Skipping empty term_naming_conv"
+        $false
+    }
+} | Select-Object -First 1
+
+# Function to clone the repository
+function gitCloneRepo {
+    param (
+        [string]$repoName,
+        [string]$targetPath
+    )
+
+    # Set Git SSH environment variable to bypass the fingerprint check
+    $env:GIT_SSH_COMMAND = "ssh -o StrictHostKeyChecking=no"
+
+    # Construct the git clone command
+    $cloneCmd = "git clone git@git.truenorth.co.za:CCTECH/$repoName.git `"$targetPath`"" 2>$null
+    
+    # Check if the target path already exists
+    if (-Not (Test-Path $targetPath)) {
+        # Run the git clone command
+        Write-Host "Cloning repository: $repoName to $targetPath"
+        Invoke-Expression $cloneCmd
+    } else {
+        Write-Host "The directory $targetPath already exists. Skipping clone."
+    }
+}
+
+# Check if a matching store was found
+if ($matchedStore -ne $null) {
+    # Set the repo name based on the matched pcdstorename
+    $repo = $matchedStore.pcdstorename
+    Write-Host "Repository found: $repo"
+
+    # Get the currently logged-in username
+    $username = $env:USERNAME
+
+    # Construct the public key path using the username
+    $keyPath = "C:\Users\$username\.ssh\id_ed25519.pub"
+
+    if (Test-Path $keyPath) {
+        # Read the public key from the file as a single string
+        $publicKey = Get-Content $keyPath -Raw
+        $keyTitle = "$username"
+
+        # Remove any trailing newline characters in the public key
+        $publicKey = $publicKey.Trim()
+
+        # Create the API endpoint URL
+        $url = "$giteaUrl/api/v1/repos/$owner/$repo/keys"
+
+        # Prepare the request headers
+        $headers = @{
+            Authorization = "Bearer $apiKey"
+        }
+
+        # Prepare the request data
+        $data = @{
+            key       = $publicKey
+            title     = $keyTitle
+            read_only = $true
+        }
+
+        # Convert the data to JSON format for the POST request
+        $jsonData = $data | ConvertTo-Json
+
+        # Debugging: Print the JSON data to ensure it's correct
+        Write-Host "Request data: $jsonData"
+
+        # Make the POST request
+        try {
+          $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Post -Body $jsonData -ContentType "application/json"
+
+          if ($response -ne $null) {
+            Write-Host "Deploy key added successfully!"
+            gitCloneRepo $repo $pcdReportsPath
+          } else {
+            Write-Host "No response received from server"
+          }
+        } catch {
+          if ($_.Exception.Response.StatusCode -eq 422) {
+            Write-Host "Error adding deploy key (likely key already exists). Proceeding with cloning the repository."
+            gitCloneRepo $repo $pcdReportsPath
+          } else {
+            Write-Host "Error adding deploy key: $_"
+          }
+        }
+    } else {
+        Write-Host "Public key not found at: $keyPath"
+    }
+} else {
+    Write-Host "No matching store found for the hostname: $hostname"
+}
