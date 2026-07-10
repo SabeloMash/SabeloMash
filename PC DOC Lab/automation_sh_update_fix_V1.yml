@@ -125,17 +125,10 @@
         cmd: "md5sum /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh"
       register: copied_automation_checksum
     
-    - name: Check for PCDVERSION file on USB
+    - name: Check for sc_lin directory (PC Doctor 17 indicator)
       ansible.builtin.stat:
-        path: /media/PC_DOCTOR.vfat/pcdoctor/PCDVERSION
-      register: pcdversion_file
-
-    - name: Read PCDVERSION if present
-      ansible.builtin.command:
-        cmd: cat /media/PC_DOCTOR.vfat/pcdoctor/PCDVERSION
-      register: pcdversion_content
-      when: pcdversion_file.stat.exists
-      changed_when: false
+        path: /media/PC_DOCTOR.vfat/pcdoctor/sc_lin
+      register: sc_lin_dir
 
     - name: Check for VERSION file on USB
       ansible.builtin.stat:
@@ -149,25 +142,11 @@
       when: version_file.stat.exists
       changed_when: false
 
-    - name: Check for pcd_version.txt file on USB
-      ansible.builtin.stat:
-        path: /media/PC_DOCTOR.vfat/pcdoctor/pcd_version.txt
-      register: pcd_version_txt_file
-
-    - name: Read pcd_version.txt if present
-      ansible.builtin.command:
-        cmd: cat /media/PC_DOCTOR.vfat/pcdoctor/pcd_version.txt
-      register: pcd_version_txt_content
-      when: pcd_version_txt_file.stat.exists
-      changed_when: false
-
-    - name: Set `usb_version` fact from discovered files or fallback to 'unknown'
+    - name: Set `usb_version` fact based on USB structure
       ansible.builtin.set_fact:
         usb_version: >-
-          {{ (pcdversion_content.stdout | default('')) or
-             (version_content.stdout | default('')) or
-             (pcd_version_txt_content.stdout | default('')) or
-             'unknown' }}
+          {{ (version_content.stdout | default('') | trim) or
+             ('PCDoctor 17' if sc_lin_dir.stat.exists else 'PCDoctor 16') }}
 
     - name: Trim usb_version whitespace
       ansible.builtin.set_fact:
@@ -398,7 +377,8 @@
         method: POST
         headers:
           Content-Type: "application/json"
-        body: '{"text":"PCD USB Update failed for {{ pcdstorename }} (USB: {{ usb_version|default(\"unknown\") }}, script: {{ script_version.stdout|default(\"unknown\") }})"}'
+        body:
+          text: "PCD USB Update failed for {{ pcdstorename }} (USB: {{ usb_version|default('unknown') }}, script: {{ script_version.stdout|default('unknown') }})"
         body_format: json
         return_content: true
         status_code: 202
@@ -421,7 +401,8 @@
         method: POST
         headers:
           Content-Type: "application/json"
-        body: '{"text":"PCD USB Update failed for {{ pcdstorename }} (USB: {{ usb_version|default(\"unknown\") }}, script: {{ script_version.stdout|default(\"unknown\") }})"}'
+        body:
+          text: "PCD USB Update failed for {{ pcdstorename }} (USB: {{ usb_version|default('unknown') }}, script: {{ script_version.stdout|default('unknown') }})"
         body_format: json
         return_content: true
         status_code: 202
