@@ -125,6 +125,62 @@
         cmd: "md5sum /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh"
       register: copied_automation_checksum
     
+    - name: Check for PCDVERSION file on USB
+      ansible.builtin.stat:
+        path: /media/PC_DOCTOR.vfat/pcdoctor/PCDVERSION
+      register: pcdversion_file
+
+    - name: Read PCDVERSION if present
+      ansible.builtin.command:
+        cmd: cat /media/PC_DOCTOR.vfat/pcdoctor/PCDVERSION
+      register: pcdversion_content
+      when: pcdversion_file.stat.exists
+      changed_when: false
+
+    - name: Check for VERSION file on USB
+      ansible.builtin.stat:
+        path: /media/PC_DOCTOR.vfat/pcdoctor/VERSION
+      register: version_file
+
+    - name: Read VERSION if present
+      ansible.builtin.command:
+        cmd: cat /media/PC_DOCTOR.vfat/pcdoctor/VERSION
+      register: version_content
+      when: version_file.stat.exists
+      changed_when: false
+
+    - name: Check for pcd_version.txt file on USB
+      ansible.builtin.stat:
+        path: /media/PC_DOCTOR.vfat/pcdoctor/pcd_version.txt
+      register: pcd_version_txt_file
+
+    - name: Read pcd_version.txt if present
+      ansible.builtin.command:
+        cmd: cat /media/PC_DOCTOR.vfat/pcdoctor/pcd_version.txt
+      register: pcd_version_txt_content
+      when: pcd_version_txt_file.stat.exists
+      changed_when: false
+
+    - name: Set `usb_version` fact from discovered files or fallback to 'unknown'
+      ansible.builtin.set_fact:
+        usb_version: >-
+          {{ (pcdversion_content.stdout | default('')) or
+             (version_content.stdout | default('')) or
+             (pcd_version_txt_content.stdout | default('')) or
+             'unknown' }}
+
+    - name: Trim usb_version whitespace
+      ansible.builtin.set_fact:
+        usb_version: "{{ usb_version.strip() }}"
+
+    - name: Write USBVERSION to automation_version.txt
+      ansible.builtin.lineinfile:
+        path: /pcdinfo/automation_version.txt
+        regexp: '^USBVERSION='
+        line: "USBVERSION={{ usb_version }}"
+        create: true
+        mode: '0755'
+
     # - name: Verify file integrity by comparing with provided checksum
     #   ansible.builtin.assert:
     #     that:
@@ -311,6 +367,25 @@
         state: present
         backup: false
 
+    - name: Read the SCRIPTVERSION value from automation.sh
+      ansible.builtin.shell: |
+        grep '^SCRIPTVERSION=' /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh | cut -d'=' -f2 | tr -d '"'
+      register: script_version
+      ignore_errors: true
+
+    - name: Display the extracted SCRIPTVERSION value
+      ansible.builtin.debug:
+        msg: "Extracted SCRIPTVERSION is {{ script_version.stdout }}"
+
+    - name: Write SCRIPTVERSION value to automation_version.txt
+      ansible.builtin.lineinfile:
+        path: /pcdinfo/automation_version.txt
+        regexp: '^SCRIPTVERSION='
+        line: "SCRIPTVERSION={{ script_version.stdout }}"
+        create: true
+        mode: '0755'
+      when: script_version.stdout is defined
+
     - name: Verify automation.sh syntax
       ansible.builtin.command:
         cmd: "bash -n /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh"
@@ -323,7 +398,7 @@
         method: POST
         headers:
           Content-Type: "application/json"
-        body: '{"text":"PCD USB Update failed for {{ pcdstorename }}"}'
+        body: '{"text":"PCD USB Update failed for {{ pcdstorename }} (USB: {{ usb_version|default(\"unknown\") }}, script: {{ script_version.stdout|default(\"unknown\") }})"}'
         body_format: json
         return_content: true
         status_code: 202
@@ -333,7 +408,7 @@
     - name: Fail if syntax is invalid
       ansible.builtin.fail:
         msg: "automation.sh has syntax errors and may be corrupted."
-      when: syntax_check.rc != 0
+      when: syntax_check.rc != 0 
 
     - name: Check file type to ensure it's ASCII text
       ansible.builtin.command:
@@ -346,7 +421,7 @@
         method: POST
         headers:
           Content-Type: "application/json"
-        body: '{"text":"PCD USB Update failed for {{ pcdstorename }}"}'
+        body: '{"text":"PCD USB Update failed for {{ pcdstorename }} (USB: {{ usb_version|default(\"unknown\") }}, script: {{ script_version.stdout|default(\"unknown\") }})"}'
         body_format: json
         return_content: true
         status_code: 202
@@ -437,11 +512,16 @@
         method: POST
         headers:
           Content-Type: "application/json"
-        body: '{"text":" PCD USB Update to {{ script_version.stdout }} done successfully for {{ pcdstorename }}"}'
+        body: '{"text":"PCD USB Update to {{ script_version.stdout|default(\"unknown\") }} (USB: {{ usb_version|default(\"unknown\") }}) done successfully for {{ pcdstorename }}"}'
         body_format: json
         return_content: true
         status_code: 202
       register: result
+
+    - name: Remove lock file # This guarantees that once the Teams alert is sent, the process ends cleanly
+      ansible.builtin.file:
+        path: /tmp/pcdoctor_update.lock
+        state: absent
  
 
       

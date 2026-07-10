@@ -69,6 +69,12 @@
       ansible.builtin.pause:
         seconds: 2
 
+    - name: Stop USB mount trigger to prevent re-entry
+      ansible.builtin.systemd:
+        name: usb-mount-trigger.path
+        state: stopped
+      ignore_errors: true
+
     - name: Download automation.sh file
       ansible.builtin.get_url:
         url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/automation.sh"
@@ -427,6 +433,25 @@
         msg: "automation.sh is not a readable ASCII text file."
       when: "'ASCII text' not in file_check.stdout"    
 
+    - name: Read the SCRIPTVERSION value from automation.sh
+      ansible.builtin.shell: |
+        grep '^SCRIPTVERSION=' /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh | cut -d'=' -f2 | tr -d '"'
+      register: script_version
+      ignore_errors: true
+
+    - name: Display the extracted SCRIPTVERSION value
+      ansible.builtin.debug:
+        msg: "Extracted SCRIPTVERSION is {{ script_version.stdout }}"
+
+    - name: Write SCRIPTVERSION value to automation_version.txt
+      ansible.builtin.lineinfile:
+        path: /pcdinfo/automation_version.txt
+        regexp: '^SCRIPTVERSION='
+        line: "SCRIPTVERSION={{ script_version.stdout }}"
+        create: true
+        mode: '0755'
+      when: script_version.stdout is defined
+
     - name: Write date to automation_version.txt
       ansible.builtin.lineinfile:
         path: /pcdinfo/automation_version.txt
@@ -442,8 +467,40 @@
 
     - name: Eject the USB drive
       ansible.builtin.command:
-        cmd: "umount /media/PC_DOCTOR.vfat"
-      ignore_errors: true   
+        cmd: "sync"
+      changed_when: false
+
+    - name: Stop any processes using the USB mount
+      ansible.builtin.command:
+        cmd: "lsof +D /media/PC_DOCTOR.vfat 2>/dev/null | awk '{print $2}' | xargs -r kill -9"
+      ignore_errors: true
+      changed_when: false
+
+    - name: Unmount USB with lazy option
+      ansible.builtin.command:
+        cmd: "umount -l /media/PC_DOCTOR.vfat"
+      ignore_errors: true
+
+    - name: Wait for unmount to complete
+      ansible.builtin.command:
+        cmd: "while fuser -m /media/PC_DOCTOR.vfat 2>/dev/null; do sleep 1; done"
+      ignore_errors: true
+      changed_when: false
+
+    - name: Eject USB device
+      ansible.builtin.command:
+        cmd: "eject /media/PC_DOCTOR.vfat"
+      ignore_errors: true
+
+    - name: Pause to allow hardware ejection
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Restart USB mount trigger for next update
+      ansible.builtin.systemd:
+        name: usb-mount-trigger.path
+        state: started
+      ignore_errors: true
     
     - name: Pause before final notification
       ansible.builtin.pause:
