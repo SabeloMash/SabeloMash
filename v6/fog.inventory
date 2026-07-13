@@ -1,0 +1,246 @@
+#!/bin/bash
+[[ $mode == +(*capone*) ]] && return
+. /usr/share/fog/lib/funcs.sh
+[[ $deployed -eq 1 ]] && . /bin/fog.checkin
+getHardDisk
+doInventory
+gpu_array_length=${#graphics_vendors_array[@]}
+if [[ -z $1 ]]; then
+    echo -e "\n\n\n"
+    echo "   +---------------------------+"
+    echo "   |     System Information    |"
+    echo "   +---------------------------+"
+    dots "System Manufacturer:"
+    echo "$sysman"
+    dots "System Product Name:"
+    echo "$sysproduct"
+    dots "System Version:"
+    echo "$sysversion"
+    dots "System Serial Number:"
+    echo "$sysserial"
+    dots "System UUID:"
+    echo "$sysuuid"
+    dots "Computer Form Factor:"
+    echo "$systype"
+    usleep 1000000
+    echo "   +---------------------------+"
+    echo "   |      BIOS Information     |"
+    echo "   +---------------------------+"
+    dots "BIOS Version:"
+    echo "$biosversion"
+    dots "BIOS Vendor:"
+    echo "$biosvendor"
+    dots "BIOS Date:"
+    echo "$biosdate"
+    usleep 1000000
+    echo "   +---------------------------+"
+    echo "   |  Motherboard Information  |"
+    echo "   +---------------------------+"
+    dots "Motherboard Manufacturer:"
+    echo "$mbman"
+    dots "Motherboard Product Name:"
+    echo "$mbproductname"
+    dots "Motherboard Product Version:"
+    echo "$mbversion"
+    dots "Motherboard Serial Number:"
+    echo "$mbserial"
+    dots "Motherboard Asset Tag:"
+    echo "$mbasset"
+    usleep 1000000
+    echo "   +---------------------------+"
+    echo "   |      CPU Information      |"
+    echo "   +---------------------------+"
+    dots "CPU Manufacturer:"
+    echo "$cpuman"
+    dots "CPU Version:"
+    echo "$cpuversion"
+    dots "CPU Current Speed:"
+    echo "$cpucurrent"
+    dots "CPU Max Speed:"
+    echo "$cpumax"
+    usleep 1000000
+    echo "   +---------------------------+"
+    echo "   |     Memory Information    |"
+    echo "   +---------------------------+"
+    dots "Memory:"
+    echo "$mem"
+    usleep 1000000
+    echo "   +---------------------------+"
+    echo "   |   Hard Disk Information   |"
+    echo "   +---------------------------+"
+    dots "Hard Disk:"
+    echo "$hdinfo"
+    usleep 1000000
+    echo "   +---------------------------+"
+    echo "   |      Case Information     |"
+    echo "   +---------------------------+"
+    dots "Case Manufacturer:"
+    echo "$caseman"
+    dots "Case Version:"
+    echo "$casever"
+    dots "Case Serial Number:"
+    echo "$caseserial"
+    dots "Case Asset Number:"
+    echo "$caseasset"
+    usleep 1000000
+    echo "   +---------------------------+"
+    echo "   |      GPU Information      |"
+    echo "   +---------------------------+"
+    for (( i=0; i<$gpu_array_length; i++ )); do
+        dots "GPU-$i Manufacturer:"
+        echo ${graphics_vendors_array[$i]}
+        dots "GPU-$i Product:"
+        echo ${graphics_products_array[$i]}
+    done
+    echo -e "\n\n\n"
+fi
+
+#JIRA TICKET CREATION
+
+# Jira credentials and API details
+JIRA_BASE_URL="https://tnfsdev.atlassian.net"
+JIRA_USERNAME="johnathan.s@tnfs.co.za"
+JIRA_API_TOKEN="ATATT3xFfGF0THqCT3srqX17D3RVVHZhuAacP2QD0zB7RLRGewPzH7RXz0X5qYqgJaaVmJCmNM5ZtSqjW6-oXwfiJvg5Y1HBXzOUYk8KVI7JoprVeUZcHoIunA6DZK0bBWUlFHL55Oo05DsBKNwv6Hwj_uI_b7n1ADYcMMDwLFOrA7MBlfIFgl8=2D14CE9B"
+PROJECT_KEY="CT"
+ISSUE_TYPE="Service Request"
+
+# Ticket details
+SUMMARY="$host.....{{ storefullname }}...FOG_PC_RELOAD "
+DESCRIPTION=
+"System Manufacturer: $sysman",
+"System Product Name: $sysproduct",
+"System Version: $sysversion",
+"System Serial Number: $sysserial",
+"System UUID: $sysuuid",
+"Computer Form Factor: $systype",
+"BIOS Version: $biosversion",
+"BIOS Vendor: $biosvendor",
+"BIOS Date: $biosdate",
+"Motherboard Manufacturer: $mbman",
+"Motherboard Product Name: $mbproductname",
+"Motherboard Product Version: $mbversion",
+"Motherboard Serial Number: $mbserial",
+"Motherboard Asset Tag: $mbasset",
+"CPU Manufacturer: $cpuman",
+"CPU Version: $cpuversion",
+"CPU Current Speed: $cpucurrent",
+"CPU Max Speed: $cpumax",
+"Memory: $mem",
+"Hard Disk: $hdinfo",
+"Case Manufacturer: $caseman",
+"Case Version: $casever",
+"Case Serial Number: $caseserial",
+"Case Asset Number: $caseasset"
+
+
+# JSON payload for creating the ticket
+CREATE_TICKET_PAYLOAD=$(cat <<EOF
+{
+    "fields": {
+       "project": {
+          "key": "$PROJECT_KEY"
+       },
+       "summary": "$SUMMARY",
+       "description": "$DESCRIPTION",
+       "issuetype": {
+          "name": "$ISSUE_TYPE"
+       },
+       "customfield_10750": {
+          "self": "https://tnfsdev.atlassian.net/rest/api/2/customFieldOption/10420",
+          "value": "{{ storefullname }}",
+          "id": "10420"
+       }
+    }
+}
+EOF
+)
+
+# Step 1: Create the Jira ticket
+CREATE_RESPONSE=$(curl -w "\nHTTP_STATUS:%{http_code}" -X POST \
+  --http1.1 \
+  -k \
+  -H "Authorization: Basic am9obmF0aGFuLnNAdG5mcy5jby56YTpBVEFUVDN4RmZHRjBUSHFDVDNzcnFYMTdEM1JWVkhaaHVBYWNQMlFEMHpCN1JMUkdld1B6SDdSWHowWDVxWXFnSmFhVm1KQ21OTTVadFNxalc2LW9Yd2ZpSnZnNVkxSEJYek9VWWs4S1ZJN0pvcHJWZVVaY0hvSXVuQTZEWkswYkJXVWxGSEw1NU9vMDVEc0JLTnd2Nkh3al91SV9iN24xQURZY01NRHdMRk9yQTdNQmxmSUZnbDg9MkQxNENFOUI=" \
+  -H "Content-Type: application/json" \
+  --data "$CREATE_TICKET_PAYLOAD" \
+  "$JIRA_BASE_URL/rest/api/2/issue/")
+
+# Extract the HTTP status code from the response
+HTTP_STATUS=$(echo "$CREATE_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+
+# Check if the ticket was created successfully
+if [ "$HTTP_STATUS" -ne 201 ]; then
+  echo "Failed to create Jira ticket."
+  echo "Response from Jira: $CREATE_RESPONSE"
+  exit 1
+fi
+
+# Extracting the issue key from the response
+ISSUE_KEY=$(echo "$CREATE_RESPONSE" | grep -oP '(?<="key":")[^"]+')
+
+echo "Jira ticket created successfully with issue key: $ISSUE_KEY"
+
+# Step 2: Fetch available transitions for the created ticket
+TRANSITIONS_RESPONSE=$(curl -X GET \
+  -H "Authorization: Basic am9obmF0aGFuLnNAdG5mcy5jby56YTpBVEFUVDN4RmZHRjBUSHFDVDNzcnFYMTdEM1JWVkhaaHVBYWNQMlFEMHpCN1JMUkdld1B6SDdSWHowWDVxWXFnSmFhVm1KQ21OTTVadFNxalc2LW9Yd2ZpSnZnNVkxSEJYek9VWWs4S1ZJN0pvcHJWZVVaY0hvSXVuQTZEWkswYkJXVWxGSEw1NU9vMDVEc0JLTnd2Nkh3al91SV9iN24xQURZY01NRHdMRk9yQTdNQmxmSUZnbDg9MkQxNENFOUI=" \
+  -H "Content-Type: application/json" \
+  "$JIRA_BASE_URL/rest/api/2/issue/$ISSUE_KEY/transitions")
+
+# Extracting the transition ID for "Resolved" status
+TRANSITION_ID=$(echo $TRANSITIONS_RESPONSE | jq -r '.transitions[] | select(.to.name == "Resolved") | .id')
+
+if [ -z "$TRANSITION_ID" ]; then
+  echo "Could not find the transition ID for 'Resolved' status."
+  exit 1
+fi
+
+# JSON payload for resolving the issue
+RESOLVE_TICKET_PAYLOAD=$(cat <<EOF
+{
+  "transition": {
+    "id": "$TRANSITION_ID"
+  }
+}
+EOF
+)
+
+# Step 3: Resolve the ticket
+RESOLVE_RESPONSE=$(curl -w "\nHTTP_STATUS:%{http_code}" -X POST \
+  --http1.1 \
+  -k \
+  -H "Authorization: Basic am9obmF0aGFuLnNAdG5mcy5jby56YTpBVEFUVDN4RmZHRjBUSHFDVDNzcnFYMTdEM1JWVkhaaHVBYWNQMlFEMHpCN1JMUkdld1B6SDdSWHowWDVxWXFnSmFhVm1KQ21OTTVadFNxalc2LW9Yd2ZpSnZnNVkxSEJYek9VWWs4S1ZJN0pvcHJWZVVaY0hvSXVuQTZEWkswYkJXVWxGSEw1NU9vMDVEc0JLTnd2Nkh3al91SV9iN24xQURZY01NRHdMRk9yQTdNQmxmSUZnbDg9MkQxNENFOUI=" \
+  -H "Content-Type: application/json" \
+  --data "$RESOLVE_TICKET_PAYLOAD" \
+  "$JIRA_BASE_URL/rest/api/2/issue/$ISSUE_KEY/transitions")
+
+# Extract the HTTP status code from the response
+HTTP_STATUS=$(echo "$RESOLVE_RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
+
+# Displaying the response
+echo "Response from Jira: $RESOLVE_RESPONSE"
+echo "HTTP Status: $HTTP_STATUS"
+
+# Check if the ticket was resolved successfully
+if [ "$HTTP_STATUS" -eq 204 ]; then
+  echo "Jira ticket resolved successfully."
+else
+  echo "Failed to resolve Jira ticket."
+fi
+poststring="mac=${mac}&sysman=${sysman64}&sysproduct=${sysproduct64}&sysversion=${sysversion64}&sysserial=${sysserial64}&sysuuid=${sysuuid64}&systype=${systype64}&biosversion=${biosversion64}&biosvendor=${biosvendor64}&biosdate=${biosdate64}&mbman=${mbman64}&mbproductname=${mbproductname64}&mbversion=${mbversion64}&mbserial=${mbserial64}&mbasset=${mbasset64}&cpuman=${cpuman64}&cpuversion=${cpuversion64}&cpucurrent=${cpucurrent64}&cpumax=${cpumax64}&mem=${mem64}&hdinfo=${hdinfo64}&caseman=${caseman64}&casever=${casever64}&caseserial=${caseserial64}&caseasset=${caseasset64}&gpuvendors=${inventory_graphics_vendor64}&gpuproducts=${inventory_graphics_product64}"
+count=0
+res=""
+while [[ -z $res ]]; do
+    dots "Attempting to send inventory"
+    res=$(curl -Lks --data "$poststring" ${web}service/inventory.php 2>/dev/null)
+    if [[ $count -ge 10 ]]; then
+        echo "Failed"
+        debugPause
+        break
+    fi
+    if [[ -z $res ]]; then
+        let count+=1
+        usleep 2000000
+    fi
+done
+echo "Done"
+debugPause
+[[ $deployed -eq 1 ]] && . /bin/fog.nonimgcomplete $mac
