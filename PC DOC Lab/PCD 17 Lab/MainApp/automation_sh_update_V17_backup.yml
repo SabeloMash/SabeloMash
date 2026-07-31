@@ -1,0 +1,574 @@
+---
+- name: Playbook to build host details
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Display ipaddress
+      ansible.builtin.debug:
+        msg: "{{ ipaddress }}"
+
+    - name: Set password1
+      ansible.builtin.set_fact:
+        password1: "{{ password1 }}"
+
+    - name: Set password2
+      ansible.builtin.set_fact:
+        password2: "{{ password2 }}"
+
+    # Test SSH reachability to the target host using the first password.
+    - name: Attempt to connect with cctech-C
+      ansible.builtin.shell: |
+        sshpass -p '{{ password1 }}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cctech@{{ ipaddress }} 'exit'
+      register: user1_connection
+      ignore_errors: true
+
+    - name: Set user1_success based on connection attempt
+      ansible.builtin.set_fact:
+        user1_success: "{{ user1_connection.rc == 0 }}"
+
+    # Try the alternate password if the first SSH test failed.
+    - name: Attempt to connect with cctech-P
+      ansible.builtin.shell: |
+        sshpass -p '{{ password2 }}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null cctech@{{ ipaddress }} 'exit'
+      when: not user1_success
+      register: user2_connection
+      ignore_errors: true
+
+    - name: Set user2_success based on connection attempt
+      ansible.builtin.set_fact:
+        user2_success: "{{ user2_connection.rc == 0 }}"
+      when: not user1_success
+
+    - name: Determine final connection details
+      ansible.builtin.set_fact:
+        ansible_user: "cctech"
+        ansible_password: "{{ password1 if user1_success else password2 }}"
+        ansible_become_password: "{{ password1 if user1_success else password2 }}"
+        connection_success: "{{ user1_success or user2_success }}"
+
+    - name: Save variables to use in the next play
+      ansible.builtin.add_host:
+        name: myhost
+        ansible_host: "{{ ipaddress }}"
+        ansible_user: "{{ ansible_user }}"
+        ansible_password: "{{ ansible_password }}"
+        ansible_become_password: "{{ ansible_become_password }}"
+        ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+        ansible_python_interpreter: /usr/bin/python3
+
+- name: Update PCDoctor USB
+  hosts: myhost
+  gather_facts: true
+  become: true
+  become_user: root
+  vars:
+    usb_root: /media/PC_DOCTOR.vfat
+    pcdoctor_override_file: "{{ usb_root }}/pcdoctor/sc_win/bin/pcdroverrides.p5i.readonly"
+    maccheck_target_path: "{{ usb_root }}/MacCheckProV1.app"
+    temp_repo_path: /tmp/maccheck_repo
+  tasks:
+    - name: Display ipaddress
+      ansible.builtin.debug:
+        msg: "{{ ipaddress }}"
+
+    - name: Pause
+      ansible.builtin.pause:
+        seconds: 2
+
+    - name: Stop USB mount trigger to prevent re-entry
+      ansible.builtin.systemd:
+        name: usb-mount-trigger.path
+        state: stopped
+      ignore_errors: true
+
+    - name: Download automation.sh file
+      ansible.builtin.get_url:
+        url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/automation.sh"
+        #url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor_lab/automation.sh"
+        dest: "/tmp/automation.sh"
+        mode: '0755'  # Make the file executable
+
+    - name: Download automation.sh.md5 file
+      ansible.builtin.get_url:
+        url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/automation.sh.md5"
+        #url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor_lab/automation.sh.md5"
+        dest: "/tmp/automation.sh.md5"
+        mode: '0755'  # Make the file executable
+
+    - name: Extract checksum from automation.sh.md5
+      ansible.builtin.command:
+        cmd: "cat /tmp/automation.sh.md5"
+      register: expected_automation_checksum
+    
+    # Calculate the checksum of the downloaded automation.sh file for validation.
+    - name: Calculate checksum of the copied file
+      ansible.builtin.command:
+        cmd: "md5sum /tmp/automation.sh"
+      register: tmp_automation_checksum
+
+    # - name: Verify file integrity by comparing with provided checksum
+    #   ansible.builtin.assert:
+    #     that:
+    #       - tmp_automation_checksum.stdout.split()[0] == expected_automation_checksum.stdout.split()[0]
+    #     fail_msg: "The copied file is corrupt. Checksum does not match the provided .md5 file."
+    #     success_msg: "File integrity verified. The copied file matches the provided .md5 checksum."
+
+    - name: Replace the existing automation.sh file
+      ansible.builtin.copy:
+        src: "/tmp/automation.sh"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh"
+        mode: '0755'
+        remote_src: true
+        backup: false
+      register: copy_result
+
+    - name: Display error message if copy fails
+      ansible.builtin.debug:
+        msg: "Failed to copy automation.sh. The USB may be corrupt. Please manually reload the USB."
+      when: copy_result.failed
+
+    # Check that the USB mount exists before trying to read the PC Doctor override file.
+    - name: Verify that the PC Doctor USB is mounted
+      ansible.builtin.stat:
+        path: "{{ usb_root }}"
+      register: usb_mount
+
+    # Read the MajorVersion value from the PC Doctor override file on the USB.
+    - name: Read the PC Doctor MajorVersion from the override file
+      ansible.builtin.shell: >
+        if [ -f "{{ pcdoctor_override_file }}" ]; then
+          grep -i 'MajorVersion' "{{ pcdoctor_override_file }}" | head -n 1 |
+          sed -n 's/.*MajorVersion[[:space:]]*=[[:space:]]*"\{0,1\}\([0-9]*\).*/\1/p'
+        else
+          echo "0"
+        fi
+      register: major_version_output
+      changed_when: false
+
+    # Store the detected version so the next task can decide whether to copy the extra folder.
+    - name: Set the detected PC Doctor major version fact
+      ansible.builtin.set_fact:
+        pcd_major_version: "{{ (major_version_output.stdout | default('') | trim) or '0' }}"
+
+    # Show the detected version in the playbook output for troubleshooting.
+    - name: Display the detected PC Doctor major version
+      ansible.builtin.debug:
+        msg: "Detected PC Doctor major version: {{ pcd_major_version }}"
+
+    # Only perform the MacCheckProV1 copy when the USB major version is 17.
+    - name: Check whether MacCheckProV1.app already exists on the USB
+      ansible.builtin.stat:
+        path: "{{ maccheck_target_path }}"
+      register: maccheck_exists
+      when: pcd_major_version == "17"
+
+    - name: Copy MacCheckProV1.app when the USB is version 17 and the folder is missing
+      block:
+        # Download the repository archive so the MacCheckProV1 folder can be extracted.
+        - name: Download the deployment archive containing the MacCheckProV1 folder
+          ansible.builtin.get_url:
+            url: "http://10.10.15.225:10880/johnathans/Deployment/archive/main.tar.gz"
+            dest: "/tmp/maccheck_deployment.tar.gz"
+            mode: '0644'
+            timeout: 60
+            headers:
+              User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0"
+
+        # Extract the archive into a temporary directory.
+        - name: Extract the deployment archive into a temporary directory
+          ansible.builtin.unarchive:
+            src: "/tmp/maccheck_deployment.tar.gz"
+            dest: "/tmp"
+            remote_src: true
+            extra_opts:
+              - --strip-components=1
+
+        # Locate the folder in the extracted content before copying it.
+        - name: Locate the MacCheckProV1.app folder in the extracted content
+          ansible.builtin.shell: |
+            find /tmp -type d -name 'MacCheckProV1.app' 2>/dev/null | head -n 1
+          register: maccheck_path_output
+          changed_when: false
+
+        - name: Set the detected MacCheckProV1.app source path
+          ansible.builtin.set_fact:
+            maccheck_source_path: "{{ maccheck_path_output.stdout | default('') | trim }}"
+
+        # Confirm that the folder exists in the extracted content before copying it.
+        - name: Verify that the MacCheckProV1.app folder exists in the extracted content
+          ansible.builtin.stat:
+            path: "{{ maccheck_source_path }}"
+          register: maccheck_app
+          when: maccheck_source_path | length > 0
+
+        # Copy the folder to the root of the USB when it was found.
+        - name: Copy MacCheckProV1.app to the USB root
+          ansible.builtin.copy:
+            src: "{{ maccheck_source_path }}"
+            dest: "{{ maccheck_target_path }}"
+            remote_src: true
+            directory_mode: true
+          when: maccheck_app is defined and maccheck_app.stat is defined and maccheck_app.stat.exists
+
+        # Remove temporary files after the copy is complete.
+        - name: Clean up the temporary archive and extracted content
+          ansible.builtin.file:
+            path: "/tmp/maccheck_deployment.tar.gz"
+            state: absent
+          ignore_errors: true
+
+        - name: Remove the extracted temporary folder
+          ansible.builtin.file:
+            path: "/tmp/pcdoctor_v17"
+            state: absent
+          ignore_errors: true
+      when:
+        - pcd_major_version == "17"
+        - not maccheck_exists.stat.exists
+
+    # Inform the operator when the folder already exists and no download is needed.
+    - name: Skip MacCheckProV1 copy because the folder already exists
+      ansible.builtin.debug:
+        msg: "MacCheckProV1.app already exists on the USB; skipping download."
+      when:
+        - pcd_major_version == "17"
+        - maccheck_exists.stat.exists
+
+    # Skip the copy when the detected version is not 17.
+    - name: Skip MacCheckProV1 copy for non-version-17 USBs
+      ansible.builtin.debug:
+        msg: "No MacCheckProV1.app copy was performed because the detected version is {{ pcd_major_version }}."
+      when: pcd_major_version != "17"
+
+    # Calculate the checksum of the updated automation.sh file after copying it to the USB.
+    - name: Calculate checksum of the copied file
+      ansible.builtin.command:
+        cmd: "md5sum /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh"
+      register: copied_automation_checksum
+    
+    # - name: Verify file integrity by comparing with provided checksum
+    #   ansible.builtin.assert:
+    #     that:
+    #       - copied_automation_checksum.stdout.split()[0] == expected_automation_checksum.stdout.split()[0]
+    #     fail_msg: "The copied file is corrupt. Checksum does not match the provided .md5 file."
+    #     success_msg: "File integrity verified. The copied file matches the provided .md5 checksum."
+
+#AUTOMATE.XML        
+    - name: Download automate.xml file
+      ansible.builtin.get_url:
+         url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/automate.xml" #Normal Tests
+        #url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor_lab/automate.xml" Short Tests
+         dest: "/tmp/automate.xml"
+         mode: '0755'  # Make the file executable
+
+    - name: Replace the existing automate.xml file in folder pcdoctor\sc_lin\scripts
+      ansible.builtin.copy:
+        src: "/tmp/automate.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_lin/scripts/automate.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing automate.xml file in folder pcdoctor/sc_win/bin/scripts/
+      ansible.builtin.copy:
+        src: "/tmp/automate.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_win/bin/scripts/automate.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing automate.xml file in folder pcdoctor/sc_and/scripts
+      ansible.builtin.copy:
+        src: "/tmp/automate.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_and/scripts/automate.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+#FULL.XML
+    - name: Download full.xml file
+      ansible.builtin.get_url:
+         url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/full.xml" 
+         dest: "/tmp/full.xml"
+         mode: '0755'  # Make the file executable
+
+    - name: Replace the existing full.xml file in folder pcdoctor\sc_lin\scripts
+      ansible.builtin.copy:
+        src: "/tmp/full.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_lin/scripts/full.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing full.xml file in folder pcdoctor/sc_win/bin/scripts/
+      ansible.builtin.copy:
+        src: "/tmp/full.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_win/bin/scripts/full.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing full.xml file in folder pcdoctor/sc_and/scripts
+      ansible.builtin.copy:
+        src: "/tmp/full.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_and/scripts/full.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+#STORAGELONG.XML
+    - name: Download storageLong.xml file
+      ansible.builtin.get_url:
+         url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/storageLong.xml" 
+         dest: "/tmp/storageLong.xml"
+         mode: '0755'  # Make the file executable
+
+    - name: Replace the existing storageLong.xml file in folder pcdoctor\sc_lin\scripts
+      ansible.builtin.copy:
+        src: "/tmp/storageLong.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_lin/scripts/storageLong.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing storageLong.xml file in folder pcdoctor/sc_win/bin/scripts/
+      ansible.builtin.copy:
+        src: "/tmp/storageLong.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_win/bin/scripts/storageLong.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing storageLong.xml file in folder pcdoctor/sc_and/scripts
+      ansible.builtin.copy:
+        src: "/tmp/storageLong.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_and/scripts/storageLong.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+#STORAGESHORT.XML
+    - name: Download storageShort.xml file
+      ansible.builtin.get_url:
+         url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/storageShort.xml" 
+         dest: "/tmp/storageShort.xml"
+         mode: '0755'  # Make the file executable
+
+    - name: Replace the existing storageShort.xml file in folder pcdoctor\sc_lin\scripts
+      ansible.builtin.copy:
+        src: "/tmp/storageShort.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_lin/scripts/storageShort.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing storageShort.xml file in folder pcdoctor/sc_win/bin/scripts/
+      ansible.builtin.copy:
+        src: "/tmp/storageShort.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_win/bin/scripts/storageShort.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Replace the existing storageShort.xml file in folder pcdoctor/sc_and/scripts
+      ansible.builtin.copy:
+        src: "/tmp/storageShort.xml"
+        dest: "/media/PC_DOCTOR.vfat/pcdoctor/sc_and/scripts/storageShort.xml"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+
+
+    - name: Download grub.cfg file
+      ansible.builtin.get_url:
+        url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/grub.cfg"
+        dest: "/tmp/grub.cfg"
+        mode: '0755'  # Make the file executable
+        headers:
+          User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0"
+
+    - name: Replace the existing grub.cfg file in folder pcdoctor/sc_and/scripts
+      ansible.builtin.copy:
+        src: "/tmp/grub.cfg"
+        dest: "/media/PC_DOCTOR.vfat/boot/grub/grub.cfg"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    - name: Download grub32.cfg file
+      ansible.builtin.get_url:
+        url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor/grub32.cfg"
+        dest: "/tmp/grub32.cfg"
+        mode: '0755'  # Make the file executable
+        headers:
+          User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0"
+
+    - name: Replace the existing grub32.cfg file in folder pcdoctor/sc_and/scripts
+      ansible.builtin.copy:
+        src: "/tmp/grub32.cfg"
+        dest: "/media/PC_DOCTOR.vfat/boot/grub/grub32.cfg"
+        mode: '0755'  # Ensure the file remains executable
+        remote_src: true  # Look for the file on the remote host
+        backup: false  # Optional: Create a backup of the original file before replacing it
+
+    # Run task to set host variables
+    - name: Include SETVARS
+      ansible.builtin.include_tasks: ../notouch/general/setvars_targeted.yml
+
+    - name: Set STORENAME in automation.sh
+      ansible.builtin.lineinfile:
+        path: /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh
+        regexp: '^STORENAME='
+        line: "STORENAME=\"{{ pcdstorename }}\""
+        state: present
+        backup: false
+
+    - name: Set REPO_NAME in automation.sh
+      ansible.builtin.lineinfile:
+        path: /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh
+        regexp: '^REPO_NAME='
+        line: "REPO_NAME=\"{{ pcd_git_repo_storename }}\""
+        state: present
+        backup: false
+
+    # Validate the updated automation.sh script for shell syntax errors.
+    - name: Verify automation.sh syntax
+      ansible.builtin.command:
+        cmd: "bash -n /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh"
+      register: syntax_check
+      ignore_errors: yes  # Allows playbook to continue even if there’s an error
+      
+    - name: Send a JSON payload to CCTECH Tech Team Chat (include PC Doctor version on failure)
+      ansible.builtin.uri:
+        url: "{{ msteams_webhook }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          body: "{{ {'text': 'PCD USB Update failed for ' + (pcdstorename | default('unknown')) + ' (PCDoctor version: ' + (pcd_major_version | default('unknown')) + ')' } | to_json }}"
+        body_format: json
+        return_content: true
+        status_code: 202
+      register: result
+      when: syntax_check.rc != 0 
+
+    - name: Fail if syntax is invalid
+      ansible.builtin.fail:
+        msg: "automation.sh has syntax errors and may be corrupted."
+      when: syntax_check.rc != 0
+
+    # Check that the updated automation.sh file is a readable ASCII text file.
+    - name: Check file type to ensure it's ASCII text
+      ansible.builtin.command:
+        cmd: "file /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh"
+      register: file_check
+      
+    - name: Send a JSON payload to CCTECH Tech Team Chat (include PC Doctor version on failure)
+      ansible.builtin.uri:
+        url: "{{ msteams_webhook }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body: "{{ {'text': 'PCD USB Update failed for ' + (pcdstorename | default('unknown')) + ' (PCDoctor version: ' + (pcd_major_version | default('unknown')) + ')' } | to_json }}"
+        body_format: json
+        return_content: true
+        status_code: 202
+      register: result
+      when: "'ASCII text' not in file_check.stdout"
+
+    - name: Fail if file is not ASCII text
+      ansible.builtin.fail:
+        msg: "automation.sh is not a readable ASCII text file."
+      when: "'ASCII text' not in file_check.stdout"
+
+    # Extract the SCRIPTVERSION value from automation.sh so it can be recorded.
+    - name: Read the SCRIPTVERSION value from automation.sh
+      ansible.builtin.shell: |
+        grep '^SCRIPTVERSION=' /media/PC_DOCTOR.vfat/pcdoctor/sc_lin/utilities/automation.sh | cut -d'=' -f2 | tr -d '"'
+      register: script_version
+      ignore_errors: true
+
+    - name: Display the extracted SCRIPTVERSION value
+      ansible.builtin.debug:
+        msg: "Extracted SCRIPTVERSION is {{ script_version.stdout }}"
+
+    - name: Write SCRIPTVERSION value to automation_version.txt
+      ansible.builtin.lineinfile:
+        path: /pcdinfo/automation_version.txt
+        regexp: '^SCRIPTVERSION='
+        line: "SCRIPTVERSION={{ script_version.stdout }}"
+        create: true
+        mode: '0755'
+      when: script_version.stdout is defined
+
+    - name: Write date to automation_version.txt
+      ansible.builtin.lineinfile:
+        path: /pcdinfo/automation_version.txt
+        regexp: '^PCDUPDATEDATE='
+        line: "PCDUPDATEDATE={{ ansible_date_time.date }} {{ ansible_date_time.time }}"
+        create: true
+        mode: '0755'
+
+    - name: Start Zabbix agent2 service
+      ansible.builtin.systemd:
+        name: zabbix-agent2
+        state: restarted
+
+    # Flush pending writes to the USB device before unmounting it.
+    - name: Eject the USB drive
+      ansible.builtin.command:
+        cmd: "sync"
+      changed_when: false
+
+    # Stop any processes still using the mounted USB path so the device can be safely unmounted.
+    - name: Stop any processes using the USB mount
+      ansible.builtin.command:
+        cmd: "lsof +D /media/PC_DOCTOR.vfat 2>/dev/null | awk '{print $2}' | xargs -r kill -9"
+      ignore_errors: true
+      changed_when: false
+
+    # Force-unmount the USB to release it even if processes are still holding it open.
+    - name: Unmount USB with lazy option
+      ansible.builtin.command:
+        cmd: "umount -l /media/PC_DOCTOR.vfat"
+      ignore_errors: true
+
+    # Wait until the USB is fully released before continuing.
+    - name: Wait for unmount to complete
+      ansible.builtin.command:
+        cmd: "while fuser -m /media/PC_DOCTOR.vfat 2>/dev/null; do sleep 1; done"
+      ignore_errors: true
+      changed_when: false
+
+    # Eject the USB device from the system after unmounting it.
+    - name: Eject USB device
+      ansible.builtin.command:
+        cmd: "eject /media/PC_DOCTOR.vfat"
+      ignore_errors: true
+
+    - name: Pause to allow hardware ejection
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Restart USB mount trigger for next update
+      ansible.builtin.systemd:
+        name: usb-mount-trigger.path
+        state: started
+      ignore_errors: true
+    
+    - name: Pause before final notification
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Send a JSON payload to CCTECH Tech Team Chat (include PC Doctor version on success)
+      ansible.builtin.uri:
+        url: "{{ msteams_webhook }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body: "{{ {'text': 'PCD USB Update to ' + (script_version.stdout | default('unknown')) + ' done successfully for ' + (pcdstorename | default('unknown')) + ' (PCDoctor version: ' + (pcd_major_version | default('unknown')) + ')' } | to_json }}"
+        body_format: json
+        return_content: true
+        status_code: 202
+      register: result
