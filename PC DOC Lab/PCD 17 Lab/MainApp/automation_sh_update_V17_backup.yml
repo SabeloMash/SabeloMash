@@ -156,19 +156,13 @@
       ansible.builtin.debug:
         msg: "Detected PC Doctor major version: {{ pcd_major_version }}"
 
-    # Only perform the MacCheckProV1 copy when the USB major version is 17.
-    - name: Check whether MacCheckProV1.app already exists on the USB
-      ansible.builtin.stat:
-        path: "{{ maccheck_target_path }}"
-      register: maccheck_exists
-      when: pcd_major_version == "17"
-
-    - name: Copy MacCheckProV1.app when the USB is version 17 and the folder is missing
+    # Always refresh MacCheckProV1.app when the USB major version is 17.
+    - name: Copy MacCheckProV1.app when the USB is version 17
       block:
         # Download the repository archive so the MacCheckProV1 folder can be extracted.
         - name: Download the deployment archive containing the MacCheckProV1 folder
           ansible.builtin.get_url:
-            url: "http://10.10.15.225:10880/johnathans/Deployment/archive/main.tar.gz"
+            url: "http://10.10.15.225:10880/johnathans/Deployment/raw/branch/main/pcdoctor_v17/MacCheckProV1.tar.gz"
             dest: "/tmp/maccheck_deployment.tar.gz"
             mode: '0644'
             timeout: 60
@@ -181,8 +175,16 @@
             src: "/tmp/maccheck_deployment.tar.gz"
             dest: "/tmp"
             remote_src: true
-            extra_opts:
-              - --strip-components=1
+            exclude:
+              - "._*"
+              - "Icon*"
+              - "*/._*"
+              - "*/Icon*"
+
+        - name: Remove macOS metadata files before copying to the VFAT USB
+          ansible.builtin.shell: |
+            find /tmp/MacCheckProV1.app -type f \( -name '._*' -o -name 'Icon*' \) -delete
+          changed_when: false
 
         # Locate the folder in the extracted content before copying it.
         - name: Locate the MacCheckProV1.app folder in the extracted content
@@ -202,11 +204,18 @@
           register: maccheck_app
           when: maccheck_source_path | length > 0
 
-        # Copy the folder to the root of the USB when it was found.
+        # Remove the previous bundle so the complete .app directory is refreshed.
+        - name: Remove the existing MacCheckProV1.app bundle from the USB
+          ansible.builtin.file:
+            path: "{{ maccheck_target_path }}"
+            state: absent
+          when: maccheck_app is defined and maccheck_app.stat is defined and maccheck_app.stat.exists
+
+        # Copy the .app directory itself to the USB root when it was found.
         - name: Copy MacCheckProV1.app to the USB root
           ansible.builtin.copy:
             src: "{{ maccheck_source_path }}"
-            dest: "{{ maccheck_target_path }}"
+            dest: "{{ usb_root }}/"
             remote_src: true
             directory_mode: true
           when: maccheck_app is defined and maccheck_app.stat is defined and maccheck_app.stat.exists
@@ -220,20 +229,12 @@
 
         - name: Remove the extracted temporary folder
           ansible.builtin.file:
-            path: "/tmp/pcdoctor_v17"
+            path: "{{ maccheck_source_path }}"
             state: absent
+          when: maccheck_source_path | length > 0
           ignore_errors: true
       when:
         - pcd_major_version == "17"
-        - not maccheck_exists.stat.exists
-
-    # Inform the operator when the folder already exists and no download is needed.
-    - name: Skip MacCheckProV1 copy because the folder already exists
-      ansible.builtin.debug:
-        msg: "MacCheckProV1.app already exists on the USB; skipping download."
-      when:
-        - pcd_major_version == "17"
-        - maccheck_exists.stat.exists
 
     # Skip the copy when the detected version is not 17.
     - name: Skip MacCheckProV1 copy for non-version-17 USBs
