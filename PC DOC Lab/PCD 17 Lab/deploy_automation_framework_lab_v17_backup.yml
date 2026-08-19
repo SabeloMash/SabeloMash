@@ -1,0 +1,179 @@
+---
+- name: Install and configure Zabbix agent2
+  hosts: all
+  become: true
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    ansible_python_interpreter: /usr/bin/python3
+    semaphore_api_url: ""
+    semaphore_api_hook_id: ""
+
+  tasks:
+    - name: Get the current Ubuntu version
+      ansible.builtin.command: lsb_release -rs
+      register: ubuntu_version
+
+    - name: Display the current Ubuntu version
+      ansible.builtin.debug:
+        msg: "Current Ubuntu version is {{ ubuntu_version.stdout }}"
+
+    - name: Set IP Address variable
+      set_fact:
+        ipaddress: "{{ ansible_default_ipv4.address }}"
+
+    # Run task to set host variables
+    - include_tasks: ../notouch/general/setvars_targeted.yml
+
+    - name: Download the master.zip from GitHub
+      ansible.builtin.get_url:
+        url: https://github.com/Ferk/udev-media-automount/archive/refs/heads/master.zip
+        dest: /tmp/master.zip
+
+    - name: Unzip the master.zip file
+      ansible.builtin.unarchive:
+        src: /tmp/master.zip
+        dest: /tmp/
+        remote_src: yes  # Indicates that the source is on the remote machine
+
+    - name: Install udev-media-automount
+      ansible.builtin.make:
+        chdir: /tmp/udev-media-automount-master
+        target: install
+
+    - name: Reload udev rules
+      ansible.builtin.command:
+        cmd: udevadm control --reload-rules
+
+    - name: Trigger udev rules
+      ansible.builtin.command:
+        cmd: udevadm trigger
+
+    - name: Create file /etc/systemd/system/usb-mount-trigger.path
+      copy:
+        dest: "/etc/systemd/system/usb-mount-trigger.path"
+        content: |
+          [Unit]
+          Description=Watch for USB mount to trigger script
+
+          [Path]
+          PathModified=/media/PC_DOCTOR.vfat
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create file /etc/systemd/system/usb-mount-trigger.service
+      copy:
+        dest: "/etc/systemd/system/usb-mount-trigger.service"
+        content: |
+          [Unit]
+          Description=Trigger script when USB is mounted
+          After=media-mount.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/home/cctech/pcdusbfileupdate.sh
+          User=root
+          Group=root
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd to apply changes
+      command: sudo systemctl daemon-reload
+
+    - name: Enable usb-mount-trigger.path to start at boot
+      ansible.builtin.systemd:
+        name: usb-mount-trigger.path
+        enabled: yes
+
+    - name: Start the usb-mount-trigger.path service
+      ansible.builtin.systemd:
+        name: usb-mount-trigger.path
+        state: started
+
+    - name: Create file /home/cctech/pcdusbfileupdate.sh
+      copy:
+        dest: "/home/cctech/pcdusbfileupdate.sh"
+        content: |
+          #!/bin/bash
+
+          # Variables
+          USB_LABEL="PC_DOCTOR"
+          LOG_FILE="/home/cctech/usb_copy.log"
+          WEBHOOK_URL="{{ semaphore_api_url }}" #PROD
+          #WEBHOOK_URL="{{ semaphore_api_lab_url }}" #LAB
+          WEBHOOK_URL_V17="{{ semaphore_api_v17_url }}" #V17
+          WEBHOOKVERSION="$WEBHOOK_URL"
+          OVERRIDES_FILE="/media/PC_DOCTOR.vfat/pcdoctor/sc_win/bin/pcdroverrides.p5i.readonly"
+          sleep 2
+
+          # Clear the old log file before starting
+          : > "$LOG_FILE"
+
+          # Ensure logging is comprehensive
+          exec > >(tee -a "$LOG_FILE") 2>&1
+
+          echo "Running as user $(id -u):$(id -g)"
+
+          echo "Starting USB copy script..."
+
+          # Check if the USB mount point exists
+          if [ ! -d "/media/PC_DOCTOR.vfat" ]; then
+              echo "Mount point /media/PC_DOCTOR.vfat does not exist. Exiting."
+              exit 0
+          fi
+
+            # Select webhook URL based on PC-Doctor major version on the inserted USB.
+            if [ -f "$OVERRIDES_FILE" ]; then
+              MAJOR_VERSION=$(awk -F'=' 'tolower($1) ~ /^majorversion[[:space:]]*$/ {gsub(/[[:space:]]/,"",$2); print $2; exit}' "$OVERRIDES_FILE")
+              if [ "$MAJOR_VERSION" = "17" ]; then
+                WEBHOOKVERSION="$WEBHOOK_URL_V17"
+              elif [ "$MAJOR_VERSION" = "16" ]; then
+                WEBHOOKVERSION="$WEBHOOK_URL"
+              fi
+              echo "Detected MajorVersion='${MAJOR_VERSION:-unknown}', using configured webhook target."
+            else
+              echo "Overrides file not found at $OVERRIDES_FILE. Using default webhook target."
+            fi
+
+          # Get the IP address
+          IP_ADDRESS=$(hostname -I | awk '{print $1}')
+          echo "Current IP address: $IP_ADDRESS"
+
+          # Send the data via the webhook
+          echo "Sending data to webhook..."
+          curl -X GET -H "Content-Type: application/json" -d '{
+              "hook_id": {{ semaphore_api_hook_id }},
+              "ipaddress": "'"$IP_ADDRESS"'",
+              "hostname": "'"$HOSTNAME"'",
+              "pcdversion": "'"$SCRIPTVERSION"'"
+            }' "$WEBHOOKVERSION"
+
+          echo "USB copy script completed successfully."
+        mode: '0755'  # Sets the file permissions
+
+    - name: Ensure /home/cctech/automation_version.txt file exists with correct permissions
+      ansible.builtin.file:
+        path: /home/cctech/automation_version.txt
+        state: touch  # Creates the file if it doesn't exist
+        mode: '0755'  # Sets the file permissions
+
+    - name: Ensure /home/cctech/usb_copy.log file exists with correct permissions
+      ansible.builtin.file:
+        path: /home/cctech/usb_copy.log
+        state: touch  # Creates the file if it doesn't exist
+        mode: '0755'  # Sets the file permissions
+
+    - name: Ensure /pcdinfo directory exists with permissions 755
+      ansible.builtin.file:
+        path: /pcdinfo
+        state: directory
+        mode: '0755'
+
+    - name: Create /pcdinfo/automation_version.txt if it does not exist
+      ansible.builtin.copy:
+        dest: /pcdinfo/automation_version.txt
+        content: "SCRIPTVERSION=0.0\n"
+        mode: '0644'
+        force: no  # Do not overwrite the file if it already exists
+        
